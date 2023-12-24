@@ -28,7 +28,7 @@ class Blockchain:
         self.chain = [Block(0, datetime.datetime.now(), "Genesis Block", bitcoin_block_hash)]
         self.forks = {}  # Dictionary to manage forked chains
 
-    # Placeholder function for PoS logic
+    # Placeholder for PoS logic using Zap
     def select_block_creator_based_on_stake(self):
         pass
 
