@@ -6,49 +6,91 @@ No license is granted herein.
 A license to use the systems, methods, processes, procedures and derivatives thereof described herein can be issued only by the owner of United States Patents 9,608,829 and 9,936,908 (the "Patents"). 
 
 The system described herein is called a "slidechain" as per the Patents referenced above. 
+
 Slidechain is a system of multiple blockchains called forked blockchains which "fork" off earlier chains in an intentional, customizable process that is positive and meets the needs and preferences of its users.
-Under normal circumstances, blockchains naturally fork from time to time and are considered to represent disputes over rule sets, protocols or, in some cases, represent malicious attacks upon the blockchain by bad actors. 
+
+Customarily, it is understood that blockchains naturally fork from time to time and are considered to represent disputes over rule sets, protocols or, in some cases, represent malicious attacks upon the blockchain by bad actors. 
+
 Customarily with forked chains, only one branch of the chain in a standard blockchain can be considered valid, and consensus on which chain is valid is customarily but not always achieved by choosing the longest chain, which represents the chain with the most work put into completing it. 
+
 In order to allow for forked chains without allowing accidental forks in the chain, there must be some mechanism by which valid forks can be verified, and invalid forks can be ignored. 
+
 Slidechain recognizes "forking" and "forked chains" as positive, intentional developments following a general principle of prioritizing user convenience, flexibility and customizability through a patented system (as per US Patents 9608829 and 9836908) to allow for customized or "siloed" blockchains which, through individualized "forked chains," permit users, sub-users or customers of said users to customize and privatize data, systems or processes as desired.
+
 The genesis block is a special block that begins the slidechain; it is different from the other blocks because it is the first block in the chain, and thus cannot include a hash of a previous block. 
+
 The genesis block marks the beginning of the genesis chain. 
+
 The protocol that governs how the genesis chain grows, what data it stores, how forks are created, and how block and chain validity are verified is indicated by a rule set inside each block in the genesis chain, and this rule set is the default set of rules that allows for the creation of forks and the modification of rules in those forks. 
+
 The fork block allows the chain to be forked such that both the genesis chain and the fork chain ("fork chain" is used interchangeably with "forked chain" to distinguish the noun "fork" from the verb "fork" or its infinitive "to fork" or its present tense "forking") are considered valid chains. 
+
 Conventional forks are considered the result of disputes or attacks by malicious actors, and generally, in a blockchain, all forks are eventually ignored and considered invalid except the one representing the longest chain. 
+
 The fork block is special because it works like a standard block, but additionally includes a reference identifying the first block, or root block, in the valid fork. 
+
 The fork block, or forked block, is part of the pre-existing "canonical" blockchain.
+
 The fork block acts as the genesis block, referenced above, for the forked chain even though the fork block itself is part of a canonical chain which has a separate genesis block.
+
 The first block of the forked chain is the root block. 
+
 In either case, any subsequent block that is chained from either the genesis chain, where the original rule set applies, or the fork chain, where the revised rule set applies, can be another fork block creating yet another valid chain fork.
+
 A general principle of slidechain contends that the ability to update the protocol and create new protocols gives slidechain the flexibility to adapt to any future technological need where a blockchain is useful.
+
 The rule sets and other protocols are not defined by this specification, but defined by users of the system at runtime and are customizable based on a scripting, or programming language.  
+
 In one application, the new rule protocol is stored as the payload of the fork block and applied to the root block and each subsequent standard block that chains from the root block; in a different conception, the new rule protocol is stored in the payload of the root block itself, and is applied to each standard block that chains from the root block.
+
 Slidechain conceives of flexibility in amending rulesets, whereas one option is to have a new protocol only be defined for a forked chain and the original protocol remains fixed and applied to the genesis chain (or canonical chain), a second option is to have the genesis chain protocol itself be modified or updated and applied to every future standard block that chains off the genesis chain, in which case the new base protocol would ideally (but not required to) be backwards compatible with the original genesis chain protocol so that all previous data is not rendered obsolete. 
+
 The protocol of a forked chain may impose its own rules for the creation of additional fork blocks on that forked chain. If a chain that does not recognize the validity of multiple branches is required for a particular application, a customized protocol that disallows forking can be created.
+
 The slidechain can have multiple forks, and there is no limit to the number of fork blocks or the frequency of fork blocks in the genesis chain, or in any forked chain which acts as a genesis chain for subsequent forks; in fact, every block in a genesis chain may conceivably be a fork block.
+
 A forked block may allow for more than one fork to chain from it. 
+
 In order for a fork block to allow for multiple forks, it must store a reference to the root block for each chain that chains from it, which requires a section in the block for authorized hashes that can store more than one authorized hash corresponding to a root block. 
+
 According to one embodiment of slidechain, the protocol rules for each forked chain are stored in the root block of each forked chain, and not the fork block itself, while in another embodiment, the protocol rules for multiple forks are stored in the fork block itself, with an identifier that references the root block to which the protocol rules apply.
+
 According to one embodiment of slidechain, the first block in a forked chain is a root block, but it may also be a fork block itself and that block may create one forked chain with a discreet protocol while, for example, the third fork block in that same forked chain, being the first block in a new forked chain, is also a fork block creating a forked chain with its own ruleset and protocol, and according to one embodiment of the slidechain, the chain rule set for each chain is stored in the first block of the chain fork. 
+
 The language used for defining the protocol rules for a forked chain at runtime can be a known computer programming or scripting language, such as, Python, Ruby, Perl, JavaScript, PHP, Scheme, VBScript, Java, Microsoft .Net, C++, C#, C, or a custom-created language for defining the protocol rules. 
 
 A fork block is interconnected with the first block in an intentional fork, called a root block, to create a valid fork chain, insofar as each block in the blockchain contains a hash of the immediately preceding block stored in the previous hash which creates a link going back through the chain from each block and is a key component to making it prohibitively difficult to modify the chain. 
+
 The root block naturally contains in its previous hash a link to the fork block. 
+
 In order to distinguish valid intentional forks from invalid unintentional forks, a hash representing the root block is also stored in the fork block, which creates a two way link where the fork block and the root block each contain a hash reference to the other.
+
 According to one iteration of slidechain, the root block is partially created before the fork block is created, in which event the previous hash, which will come from the fork block, and the nonce are left unspecified at that point, while a payload hash is created from the data stored in the payload, and the payload hash and all the data of the root block, except the previous hash and the nonce which are left unspecified, are used to compute a short hash.
+
 The short hash of the root block is stored as the authorized hash of the fork block, which has a special block component field for "authorized hash" (this is similar to the "ExtraData" field used in some blockchains). 
+
 The unspecified elements must be excluded, because excluding the previous hash from the short hash prevents the situation of having mutually dependent hashes with no known way to find a solution, while excluding the nonce is required because the nonce will later be changed in determining a valid hash for the root block after the previous hash is determined from the fork block, which does not yet exist at that point.
+
 One concept is to provide that the protocol rules that apply to the fork chain beginning with the root block are stored in the fork block payload, in which event a hash is computed based on the fork block payload and stored as the payload hash, and a fork flag is set in the fork block to indicate a valid fork branching from the fork block, while the authorized hash (which represents the root block), is included along with the payload hash and the rest of the fork block data in computing a valid hash for the fork block, which is achieved by repeatedly adjusting the fork block nonce until the resulting hash meets the required proof standard.
+
 Once the fork block hash is computed and stored as the previous hash (which was previously left unspecified) of the root block, a valid root block hash can then be computed by repeatedly adjusting the root block nonce until a hash is produced that meets the required proof standard; recall that as the previous hash and the nonce of the root block are not included in the short hash, they can safely be modified without changing the authorized hash in the fork block, which is essential because any changes to the data used to compute the short hash will cause a mismatch between the short hash and the authorized hash stored in the fork block, breaking the link between the fork block and the root block.
+
 According to one iteration, additional rules are imposed to prevent unauthorized forks from being recognized and the system is configured to ignore exact copies of blocks which can be detected by comparing the block hash or the short hash between two blocks that both reference the same previous block, as the block hash is based at least on the previous hash, nonce, payload hash, timestamp, proof standard, descriptor, fork flag, and optionally the authorized hash, when present. 
+
 According to one iteration, the root block may also be a fork block, and such a root block is called a root fork for purposes of distinguishing it from a regular root block; in this case, if the fork flag in the root block is set, an authorized hash is stored identifying a second root block that begins a valid fork, but when a root block is a fork block (a root fork), the second root block must be created first and the short hash of the second root block is stored as the authorized hash in the root fork block (which to be clear, is a fork block), after which the root fork short hash can then be computed and stored as the authorized hash of the fork block so that once the fork block is created, the block hashes for the fork block, the root fork block, and the second root block can then be computed in the required order, as described above.
+
 As mentioned earlier, according to one iteration, multiple authorized forks may generate from a single fork block if that fork block stores an equal number of multiple authorized hashes, which are stored in a flexible structure that allows storage of one or more short hashes corresponding to one or more root blocks. The protocol rules for each valid fork may be stored in the fork block payload, or in the root blocks for each authorized fork chain respectively.
+
 When a slidechain forks, the authorized root block referenced in the fork block represents one side of the fork, while the other side of the fork is determined by the standard rule for a blockchain where the longest blockchain is considered the valid chain and all other forks are abandoned; the root block which has a short hash that matches the authorized hash in the fork block is automatically recognized as valid regardless of how long the chain from that root block is, and among the remaining two chains, the longest chain is considered the second valid chain and the shorter chain is abandoned by the distributed network.
+
 One iteration of the system provides that the process of creating a valid slidechain fork begins by computing the payload hash for the root block, which payload hash is a mathematical summary of the payload data and does not have to meet any proof standard; after that, the short hash is then computed using at least the payload hash and timestamp as inputs, and may include other parts of the block as well because including more parts of the block in the short hash improves the reliability and security of the slidechain by making it more difficult to spoof an apparently authorized chain fork, and the fork block can then be created with the short hash from the root block stored as the authorized hash in the fork block once the block hash meets the proof standard stored in the fork block by repeatedly adjusting the nonce until a hash is found that meets the proof standard.
+
 The block hash from the fork block is stored as the previous hash (previously unspecified) in the root block, which completes the two-way reference between the fork block and the root block, ensuring that the root block represents an authorized and valid fork from the fork block, and the root block is validated or finalized by finding a block hash that meets the proof standard stored in the root block.
+
 There is a process for verifying the integrity and validity of a slidechain fork, starting when a fork block, indicated by a block with the fork flag set, is checked to see if the root block contains the fork block hash as the root block's previous hash, which requires verifying that the short hash of the root block matches an authorized hash stored in the fork block; then the system reads the protocol from the payload of the fork block or the root block; then the system verifies the descriptor and the payload hash according to the rules specified in the protocol, and verifies that the timestamp meets the requirements specified by the protocol. 
+
 Then the system checks validity of the subsequent blocks on this fork chain according to the rules of the protocol read from the beginning of the fork chain, and applies the protocol to the network messages belonging to this fork chain, which may include determining which network messages belong to this fork chain based on rules in the protocol for identifying relevant network messages.
+
 **temporary end**
 
 
