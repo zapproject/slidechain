@@ -1,20 +1,5 @@
-﻿threeoctree.js (r60)
-========
+SINCE SUPERSEDED
 
-#### (sparse + dynamic) 3D spatial representation structure for fast searches ####
-
-The aim of this project is to create a fully featured search tree for the [THREE.js WebGL library](http://mrdoob.github.com/three.js/).   
-  
-```html
-This build is stable up to THREE.js ~r60
-(updates to latest THREE build on hold as my time is required on other projects)  
-```
-  
-## Features (+ [Example](http://collinhover.github.com/threeoctree))
-
-* handle complete objects ( i.e. 1 center position for entire geometry )
-* handle object faces ( i.e. split a complex mesh's geometry into a series of pseudo-objects )
-* handle both objects and faces together in a single octree
 * overlaping nodes to help sort objects that overlap multiple nodes much more efficiently ( overlap is percentage based )
 * split ( 1 larger octree node > up to 8 smaller octree nodes )
 * merge ( up to 8 smaller octree nodes > 1 larger octree node )
