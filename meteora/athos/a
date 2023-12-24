@@ -18,6 +18,17 @@ class Block:
             self.nonce += 1
             self.hash = self.calculate_hash()
 
+// NOTE: Fork block is on the canonical chain that is a forked chain from a master blockchain (e.g., bitcoin).
+// The master blockchain (Blockchain Zero?) is referred to here as the canonical chain 
+// The "fork" aka "fork chain" is the forked chain
+// In the forked chain, its first block is the root block 
+// The fork block term we use here is the block on the canonical chain
+// The root block components are (or can be) standard, customize as desired, except that two fields in the root block hash MUST be left unspecified: the nonce and the previous hash
+// The root block hash with these two unspecified fields is a "short hash" which updates when the fork block (see above) is formed
+// The root block predates the fork block
+// The root block can be an uncle block b/c that way it is a pre-existing block available as a "building block" for your fork chain
+
+
 # Create Genesis Block
 genesis_block = Block(time.time(), "Genesis Block")
 
