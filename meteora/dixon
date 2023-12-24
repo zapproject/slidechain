@@ -1,7 +1,9 @@
 # protoslideonzap
 Reference here on slidechain design.
 PATENT PROTECTED. 
-No license is granted herein. A license to use the systems, methods, processes, procedures and derivatives thereof described herein can be issued only by the owner of United States Patents 9,608,829 and 9,936,908 (the "Patents"). 
+U.S. PATENT NO. 9608829 and 9836908.
+No license is granted herein. 
+A license to use the systems, methods, processes, procedures and derivatives thereof described herein can be issued only by the owner of United States Patents 9,608,829 and 9,936,908 (the "Patents"). 
 
 The system described herein is called a "slidechain" as per the Patents referenced above. 
 Slidechain is a system of multiple blockchains called forked blockchains which "fork" off earlier chains in an intentional, customizable process that is positive and meets the needs and preferences of its users.
