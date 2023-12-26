@@ -84,3 +84,22 @@ my_blockchain.fork_blockchain(new_fork)
 # resolve any forks and print the final blockchain
 my_blockchain.resolve_forks()
 print([block.data for block in my_blockchain.chain])
+
+// Block header components in intentional fork of bitcoin
+
+// Header must be modified to add fields allowing for the fork buildout
+// The root block and fork block are no different in this structure
+// Every root block can be turned into a fork block
+// All blocks in forked bitcoin chain must accommodate multiple downstream forks comprising fork buildout
+// Forked bitcoin chain block header adds blank field for authorized hashes representing short hash from the root block 
+// Recall that root block is the first block in the desired fork
+// Short hash of root block is block header w/ unspecified prev.hash and unspecified nonce
+
+// Number of authorized hashes = number of desired forks
+// Each new block that is created must have an authorized hash field
+// Authorized hash field can be left unspecified if no fork desired
+// The manager who controls specific forked chain can turn a fork block into a root block
+// by using a fork flag to specify data in a new fork flag field
+// Fork flag field is another non-standard field slidechain adds to bitcoin block header
+// 
+
