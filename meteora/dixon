@@ -91,12 +91,16 @@ There is a process for verifying the integrity and validity of a slidechain fork
 
 Then the system checks validity of the subsequent blocks on this fork chain according to the rules of the protocol read from the beginning of the fork chain, and applies the protocol to the network messages belonging to this fork chain, which may include determining which network messages belong to this fork chain based on rules in the protocol for identifying relevant network messages.
 
-// Block components for bitcoin blocks in an intentional fork of bitcoin
+// Block header components in intentional fork of bitcoin
 
 // Header must be modified to add fields allowing for the fork buildout
 // The root block and fork block are no different in this structure
+// Every root block can be turned into a fork block
 // All blocks in forked bitcoin chain must accommodate multiple downstream forks comprising fork buildout
 // Forked bitcoin chain block header adds blank field for authorized hashes which represent the short hash that comes from the root block which is the first block in the desired fork
 
-
+// Number of authorized hashes = number of desired forks
+// Each new block that is created ideally should have an authorized hash field
+// Authorized hash field can be left unspecified if no fork desired
+// A fork flag can be set when user controlling the specific forked chain wants to turn a fork block into a root block 
 
