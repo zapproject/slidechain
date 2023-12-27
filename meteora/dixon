@@ -7,19 +7,31 @@ A license to use the systems, methods, processes, procedures and derivatives the
 
 The system described herein is called a "slidechain" as per the Patents referenced above. 
 
-Slidechain is a system of multiple blockchains called forked blockchains which "fork" off earlier chains in an intentional, customizable process that is positive and meets the needs and preferences of its users.
+Slidechain is a system of multiple blockchains called forked blockchains.
+Forked chains "fork" off earlier chains.
+Slidechain supports intentional, customizable forking.
+This forking is positive and meets the needs and preferences of its users.
 
-Customarily, it is understood that blockchains naturally fork from time to time and are considered to represent disputes over rule sets, protocols or, in some cases, represent malicious attacks upon the blockchain by bad actors. 
+Customarily, it is understood that blockchains naturally fork from time to time.
+Forks are considered to represent disputes over rule sets or protocols;
+however, in some cases, forks are malicious attacks by bad actors. 
 
-Customarily with forked chains, only one branch of the chain in a standard blockchain can be considered valid, and consensus on which chain is valid is customarily but not always achieved by choosing the longest chain, which represents the chain with the most work put into completing it. 
+Customarily with forked chains, only one branch can be considered valid.
+Consensus on which chain is valid is customarily determined by the longest chain.
+The longest chain represents the chain with the most work put into completing it. 
 
-In order to allow for forked chains without allowing accidental forks in the chain, there must be some mechanism by which valid forks can be verified, and invalid forks can be ignored. 
+To allow forked chains without allowing accidental forks, we need a way to verify valid forks.
+We also need a way to detect and ignore invalid forks at the same time. 
 
-Slidechain recognizes "forking" and "forked chains" as positive, intentional developments following a general principle of prioritizing user convenience, flexibility and customizability through a patented system (as per US Patents 9608829 and 9836908) to allow for customized or "siloed" blockchains which, through individualized "forked chains," permit users, sub-users or customers of said users to customize and privatize data, systems or processes as desired.
+Slidechain recognizes "forking" and "forked chains" as positive. 
+Its general principles are to prioritize user convenience, flexibility and customizability.
+It uses a patented system (as per US Patents 9608829 and 9836908).
+Slidechain allows customized or "siloed" blockchains.
+Using individualized "forked chains," users can customize and privatize data, systems or processes.
 
-The genesis block is a special block that begins the slidechain; it is different from the other blocks because it is the first block in the chain, and thus cannot include a hash of a previous block. 
-
-The genesis block marks the beginning of the genesis chain. 
+The genesis block is a special block that begins the slidechain. 
+It is different from other blocks because as the first block there is no previous block.
+Thus, there can be no previous block hash, unlike future blocks in the chain. 
 
 The protocol that governs how the genesis chain grows, what data it stores, how forks are created, and how block and chain validity are verified is indicated by a rule set inside each block in the genesis chain, and this rule set is the default set of rules that allows for the creation of forks and the modification of rules in those forks. 
 
