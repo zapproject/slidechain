@@ -85,21 +85,38 @@ my_blockchain.fork_blockchain(new_fork)
 my_blockchain.resolve_forks()
 print([block.data for block in my_blockchain.chain])
 
-// Block header components in intentional fork of bitcoin
+# Block header components in intentional fork of bitcoin
 
-// Header must be modified to add fields allowing for the fork buildout
-// The root block and fork block are no different in this structure
-// Every root block can be turned into a fork block
-// All blocks in forked bitcoin chain must accommodate multiple downstream forks comprising fork buildout
-// Forked bitcoin chain block header adds blank field for authorized hashes representing short hash from the root block 
-// Recall that root block is the first block in the desired fork
-// Short hash of root block is block header w/ unspecified prev.hash and unspecified nonce
+# modify header to add fields allowing for the fork buildout
+# root block and fork block are no different in this structure
+# every root block can be turned into a fork block
+# all blocks in forked bitcoin chain must accommodate multiple forks 
+# downstream forks comprise fork system buildout
+# add 2 blank fields to forked chain genesis block block header for each possible fork
+# add 1st blank field to forked chain genesis block header for fork flag
+# add 2nd blank field for authorized hash representing short hash from the root block 
+# recall that root block is the first block in the desired fork
+# short hash of root block is block header w/ unspecified prev.hash and unspecified nonce
 
-// Number of authorized hashes = number of desired forks
-// Each new block that is created must have an authorized hash field
-// Authorized hash field can be left unspecified if no fork desired
-// The manager who controls specific forked chain can turn a fork block into a root block
-// by using a fork flag to specify data in a new fork flag field
-// Fork flag field is another non-standard field slidechain adds to bitcoin block header
-// 
+# Number of authorized hashes = number of desired forks
+# each new block that is created must have authorized hash field
+# can leave authorized hash field unspecified if no fork desired
+# available always for future fork when fork desired
+# whoever controls specific forked chain can turn a fork block into a root block
+# use fork flag to specify data in a new fork flag field
+# fork flag field is another non-standard field slidechain adds to bitcoin block header
+
+# Slidechain permits event management functions 
+# accommodate multiple linked chains 
+As an example 
+# blockchain_one: master protocol chain 
+        In one iteration, has inalterable rules In different iteration, everything is forkable
+
+# blockchain_two: client chain sets forth rules can change at will 
+# blockchain_three: credentials chain 
+Credentials admit or deny use of system to applicants 
+# blockchain_four: event operations chain (multiple chains) 
+Each chain manages one or more various functions of event 
+# blockchain_five: counting chain 
+Chain for recording events, counting or tallying items Items can be points, chips, credits, votes, etc.
 
