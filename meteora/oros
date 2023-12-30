@@ -25,6 +25,22 @@ class Blockchain:
     def create_genesis_block(self):
         return Block(0, datetime.datetime.now(), "Genesis Block", "0")
 
+    # insert new fields into slidechain blocks
+    # two new fields in block_body needed for each desired fork
+    # New block_body_field_1 is authorized.hash
+    # New block_body_field_2 is authorized.hash.fork.flag
+    authorized.hash in root.block = new_block().hash
+    where new_block.previous_hash = latest_block().previous_hash() 
+        and
+    where new_block.previous_hash = latest_block().nonce()
+
+    def create_new_block_body
+        self.get_latest_block().hash
+        self.latest_block.append(new_block_body_field)
+        add_block_body.hash(self, new_block_body_field[+1])
+        new_block_body_field[+1] = new_block.authorized_hash
+        new_block_body_field[+2] = new_block.authorized_hash_fork_flag
+
     def get_latest_block(self):
         return self.chain[-1]
 
@@ -59,7 +75,13 @@ class Blockchain:
         return True
 
     def resolve_forks(self):
-        # loop through all forks and choose the longest valid chain
+    # check if current_block.fork_flag = ():
+           return False
+
+    return True
+
+    # If true = then loop through all forks
+    # loop through all forks and choose the longest valid chain
         for fork_hash, fork in self.forks.items():
             if self.is_valid_chain(fork.chain) and len(fork.chain) > len(self.chain):
                 self.chain = fork.chain
