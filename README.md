@@ -1,22 +1,24 @@
-Slidechain applications were introduced in U.S. Pat. 9608829 and 9836908.
-All rights reserved to said patents.
+# Slidechain applications were introduced in U.S. Pat. 9608829 and 9836908.
+# Blocktech LLC reserves all rights to said patents.
 Each patent was granted in 2017. 
-No license granted to slidechain except pursuant to a validly executed license agreement.
+# No license granted to slidechain or any derivative, description, application or use thereof 
+# except pursuant to a validly executed license agreement.
 
- Slidechain permits event management functions
- Accommodate multiple linked chains
-As an example
-        Blockchain_one: master protocol chain
+# Slidechain permits event management functions
+# Accommodate multiple linked chains
+
+# As an example
+# Blockchain_one: master protocol chain
         In one iteration, has inalterable rules
 	In different iteration, everything is forkable
 
-Blockchain_two: client chain
+# Blockchain_two: client chain
         Sets forth rules which client can change at will
-Blockchain_three: credentials chain
+# Blockchain_three: credentials chain
         Credentials admit or deny use of system to applicants
-Blockchain_four: event operations chain (multiple chains)
+# Blockchain_four: event operations chain (multiple chains)
         Each chain manages one or more various functions of event
-Blockchain_five: counting chain
+# Blockchain_five: counting chain
         Chain for recording events, counting or tallying items 
 	Items can be points, chips, credits, votes, etc.
 
