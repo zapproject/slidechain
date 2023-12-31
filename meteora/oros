@@ -17,6 +17,66 @@ class Block:
                    str(self.previous_hash).encode('utf-8'))
         return sha.hexdigest()
 
+class Block:
+    def __init__(self, timestamp, data, previous_hash=''):
+        self.timestamp = timestamp
+        self.data = data
+        self.previous_hash = previous_hash
+        self.nonce = 0
+        self.hash = self.calculate_hash()
+        self.is_fork_block = False  # Flag for fork block
+
+    def calculate_hash(self):
+        return hashlib.sha256(f"{self.previous_hash}{self.timestamp}{self.data}{self.nonce}".encode()).hexdigest()
+
+    def mine_block(self, difficulty):
+        while self.hash[:difficulty] != '0' * difficulty:
+            self.nonce += 1
+            self.hash = self.calculate_hash()
+
+# NOTE: Fork block is on the canonical chain that is a forked chain from a master blockchain (e.g., bitcoin).
+# The master blockchain (Blockchain Zero?) is referred to here as the canonical chain 
+# The "fork" aka "fork chain" is the forked chain
+# In forked chain, its first block is the "root" block 
+# "Fork block" is block on the canonical chain that already exists
+# root block components are (or can be) standard, customize as desired, except that two fields in the root block hash MUST be left unspecified: the nonce and the previous hash
+# root block hash with these two unspecified fields is a deliberately incomplete "short hash" 
+# the optional-updatable "short hash" updates when the fork block (see above) is formed
+# root block predates the fork block
+# root block can be an uncle block b/c that way it is a pre-existing block available as a "building block" for your fork chain
+# root block remains available for "forking" anytime whoever controls existing chain wants a fork
+
+
+# Create Genesis Block
+genesis_block = Block(time.time(), "Genesis Block")
+
+# Forked Block Header Creation
+def create_forked_block_header(block):
+    if block.is_fork_block:
+        return f"Forked Block Header: {block.hash}"
+    else:
+        return "This block is not a fork block."
+
+# Chain Validation Function
+def validate_chain(chain):
+    for i in range(1, len(chain)):
+        current_block = chain[i]
+        previous_block = chain[i - 1]
+
+        if current_block.hash != current_block.calculate_hash():
+            return False
+
+        if current_block.previous_hash != previous_block.hash:
+            return False
+
+    return True
+
+# Example usage
+blockchain = [genesis_block]
+new_block = Block(time.time(), "Block 2", genesis_block.hash)
+blockchain.append(new_block)
+
+
 class Blockchain:
     def __init__(self):
         self.chain = [self.create_genesis_block()]
