@@ -1,0 +1,203 @@
+import hashlib
+import datetime
+
+class Block:
+    def __init__(self, index, timestamp, data, previous_hash):
+        self.index = index
+        self.timestamp = timestamp
+        self.data = data
+        self.previous_hash = previous_hash
+        self.hash = self.calculate_hash()
+
+    def calculate_hash(self):
+        sha = hashlib.sha256()
+        sha.update(str(self.index).encode('utf-8') +
+                   str(self.timestamp).encode('utf-8') +
+                   str(self.data).encode('utf-8') +
+                   str(self.previous_hash).encode('utf-8'))
+        return sha.hexdigest()
+
+class Block:
+    def __init__(self, timestamp, data, previous_hash=''):
+        self.timestamp = timestamp
+        self.data = data
+        self.previous_hash = previous_hash
+        self.nonce = 0
+        self.hash = self.calculate_hash()
+        self.is_fork_block = False  # Flag for fork block
+
+    def calculate_hash(self):
+        return hashlib.sha256(f"{self.previous_hash}{self.timestamp}{self.data}{self.nonce}".encode()).hexdigest()
+
+    def mine_block(self, difficulty):
+        while self.hash[:difficulty] != '0' * difficulty:
+            self.nonce += 1
+            self.hash = self.calculate_hash()
+
+# NOTE: Fork block is on the canonical chain that is a forked chain from a master blockchain (e.g., bitcoin).
+# The master blockchain (Blockchain Zero?) is referred to here as the canonical chain 
+# The "fork" aka "fork chain" is the forked chain
+# In forked chain, its first block is the "root" block 
+# "Fork block" is block on the canonical chain that already exists
+# root block components are (or can be) standard, customize as desired, except that two fields in the root block hash MUST be left unspecified: the nonce and the previous hash
+# root block hash with these two unspecified fields is a deliberately incomplete "short hash" 
+# the optional-updatable "short hash" updates when the fork block (see above) is formed
+# root block predates the fork block
+# root block can be an uncle block b/c that way it is a pre-existing block available as a "building block" for your fork chain
+# root block remains available for "forking" anytime whoever controls existing chain wants a fork
+
+
+# Create Genesis Block
+genesis_block = Block(time.time(), "Genesis Block")
+
+# Forked Block Header Creation
+def create_forked_block_header(block):
+    if block.is_fork_block:
+        return f"Forked Block Header: {block.hash}"
+    else:
+        return "This block is not a fork block."
+
+# Chain Validation Function
+def validate_chain(chain):
+    for i in range(1, len(chain)):
+        current_block = chain[i]
+        previous_block = chain[i - 1]
+
+        if current_block.hash != current_block.calculate_hash():
+            return False
+
+        if current_block.previous_hash != previous_block.hash:
+            return False
+
+    return True
+
+# Example usage
+blockchain = [genesis_block]
+new_block = Block(time.time(), "Block 2", genesis_block.hash)
+blockchain.append(new_block)
+
+
+class Blockchain:
+    def __init__(self):
+        self.chain = [self.create_genesis_block()]
+        self.forks = {}
+
+    def create_genesis_block(self):
+        return Block(0, datetime.datetime.now(), "Genesis Block", "0")
+
+    # insert new fields into slidechain blocks
+    # two new fields in block_body needed for each desired fork
+    # New block_body_field_1 is authorized.hash
+    # New block_body_field_2 is authorized.hash.fork.flag
+    authorized.hash in root.block = new_block().hash
+    where new_block.previous_hash = latest_block().previous_hash() 
+        and
+    where new_block.previous_hash = latest_block().nonce()
+
+    def create_new_block_body
+        self.get_latest_block().hash
+        self.latest_block.append(new_block_body_field)
+        add_block_body.hash(self, new_block_body_field[+1])
+        new_block_body_field[+1] = new_block.authorized_hash
+        new_block_body_field[+2] = new_block.authorized_hash_fork_flag
+
+    def get_latest_block(self):
+        return self.chain[-1]
+
+    def add_block(self, new_block):
+        new_block.previous_hash = self.get_latest_block().hash
+        new_block.hash = new_block.calculate_hash()
+        self.chain.append(new_block)
+
+    def fork_blockchain(self, new_chain):
+        # create a new branch with the same genesis block
+        new_fork = Blockchain()
+        new_fork.chain[0] = new_chain[0]
+
+        # add each block from the new chain to the new fork
+        for block in new_chain[1:]:
+            new_fork.add_block(block)
+
+        # store the new fork in the forks dictionary
+        self.forks[new_fork.get_latest_block().hash] = new_fork
+
+    def is_valid_chain(self, chain):
+        for i in range(1, len(chain)):
+            current_block = chain[i]
+            previous_block = chain[i-1]
+
+            if current_block.hash != current_block.calculate_hash():
+                return False
+
+            if current_block.previous_hash != previous_block.hash:
+                return False
+
+        return True
+
+    def resolve_forks(self):
+    # check if current_block.fork_flag = ():
+           return False
+
+    return True
+
+    # If true = then loop through all forks
+    # loop through all forks and choose the longest valid chain
+        for fork_hash, fork in self.forks.items():
+            if self.is_valid_chain(fork.chain) and len(fork.chain) > len(self.chain):
+                self.chain = fork.chain
+
+        # clear the forks dictionary
+        self.forks = {}
+
+# create a new blockchain
+my_blockchain = Blockchain()
+
+# add some blocks to the chain
+my_blockchain.add_block(Block(1, datetime.datetime.now(), "Block 1 Data", ""))
+my_blockchain.add_block(Block(2, datetime.datetime.now(), "Block 2 Data", ""))
+my_blockchain.add_block(Block(3, datetime.datetime.now(), "Block 3 Data", ""))
+
+# fork the blockchain and add some blocks to the new branch
+new_fork = my_blockchain.chain[:2]  # fork after the second block
+new_fork.append(Block(3, datetime.datetime.now(), "Forked Block 3 Data", ""))
+new_fork.append(Block(4, datetime.datetime.now(), "Forked Block 4 Data", ""))
+my_blockchain.fork_blockchain(new_fork)
+
+# resolve any forks and print the final blockchain
+my_blockchain.resolve_forks()
+print([block.data for block in my_blockchain.chain])
+
+# Block header components in intentional fork of bitcoin
+
+# modify header to add fields allowing for the fork buildout
+# root block and fork block are no different in this structure
+# every root block can be turned into a fork block
+# all blocks in forked bitcoin chain must accommodate multiple forks 
+# downstream forks comprise fork system buildout
+# add 2 blank fields to forked chain genesis block block header for each possible fork
+# add 1st blank field to forked chain genesis block header for fork flag
+# add 2nd blank field for authorized hash representing short hash from the root block 
+# recall that root block is the first block in the desired fork
+# short hash of root block is block header w/ unspecified prev.hash and unspecified nonce
+
+# Number of authorized hashes = number of desired forks
+# each new block that is created must have authorized hash field
+# can leave authorized hash field unspecified if no fork desired
+# available always for future fork when fork desired
+# whoever controls specific forked chain can turn a fork block into a root block
+# use fork flag to specify data in a new fork flag field
+# fork flag field is another non-standard field slidechain adds to bitcoin block header
+
+# Slidechain permits event management functions 
+# accommodate multiple linked chains 
+As an example 
+# blockchain_one: master protocol chain 
+        In one iteration, has inalterable rules In different iteration, everything is forkable
+
+# blockchain_two: client chain sets forth rules can change at will 
+# blockchain_three: credentials chain 
+Credentials admit or deny use of system to applicants 
+# blockchain_four: event operations chain (multiple chains) 
+Each chain manages one or more various functions of event 
+# blockchain_five: counting chain 
+Chain for recording events, counting or tallying items Items can be points, chips, credits, votes, etc.
