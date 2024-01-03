@@ -177,7 +177,7 @@ print([block.data for block in my_blockchain.chain])
 # add 2 blank fields to forked chain genesis block block header for each possible fork
 # add 1st blank field to forked chain genesis block header for fork flag
 # add 2nd blank field for authorized hash representing short hash from the root block 
-# recall that root block is the first block in the desired fork
+# remember that root block is the first block in the desired fork
 # short hash of root block is block header w/ unspecified prev.hash and unspecified nonce
 
 # Number of authorized hashes = number of desired forks
