@@ -57,6 +57,8 @@ def create_forked_block_header(block):
     else:
         return "This block is not a fork block."
 
+# Forked Block Header once created is updatable!
+
 # Chain Validation Function
 def validate_chain(chain):
     for i in range(1, len(chain)):
@@ -95,6 +97,25 @@ class Blockchain:
     where new_block.previous_hash = latest_block().nonce()
 
     def create_new_block_body
+        self.get_latest_block().hash
+        self.latest_block.append(new_block_body_field)
+        add_block_body.hash(self, new_block_body_field[+1])
+        new_block_body_field[+1] = new_block.authorized_hash
+        new_block_body_field[+2] = new_block.authorized_hash_fork_flag
+
+if new_block.authorized_hash != calculate_new_block.authorized_hash():
+            return False
+then authorized_hash()
+
+if new_block_body_field[+1] != calculate_new_block_body_field.authorized_hash_fork_flag():
+            return False
+then authorized_hash() and authorized_hash_fork_flag()
+then no fork 
+
+# until it loops and value is not ()
+# then fork is enabled
+
+    def create_temporary_block_body
         self.get_latest_block().hash
         self.latest_block.append(new_block_body_field)
         add_block_body.hash(self, new_block_body_field[+1])
