@@ -499,6 +499,81 @@ getmempoolancestors "txid"
   ...
 }
 
+getmempoolentry "txid"
+
+      {                                       (json object)
+  "vsize" : n,                          (numeric) virtual transaction size as defined in BIP 141. This is different from actual serialized size for witness transactions as witness data is discounted.
+  "weight" : n,                         (numeric) transaction weight as defined in BIP 141.
+  "fee" : n,                            (numeric) transaction fee in BTC (DEPRECATED)
+  "modifiedfee" : n,                    (numeric) transaction fee with fee deltas used for mining priority (DEPRECATED)
+  "time" : xxx,                         (numeric) local time transaction entered pool in seconds since 1 Jan 1970 GMT
+  "height" : n,                         (numeric) block height when transaction entered pool
+  "descendantcount" : n,                (numeric) number of in-mempool descendant transactions (including this one)
+  "descendantsize" : n,                 (numeric) virtual transaction size of in-mempool descendants (including this one)
+  "descendantfees" : n,                 (numeric) modified fees (see above) of in-mempool descendants (including this one) (DEPRECATED)
+  "ancestorcount" : n,                  (numeric) number of in-mempool ancestor transactions (including this one)
+  "ancestorsize" : n,                   (numeric) virtual transaction size of in-mempool ancestors (including this one)
+  "ancestorfees" : n,                   (numeric) modified fees (see above) of in-mempool ancestors (including this one) (DEPRECATED)
+  "wtxid" : "hex",                      (string) hash of serialized transaction, including witness data
+  "fees" : {                            (json object)
+    "base" : n,                         (numeric) transaction fee in BTC
+    "modified" : n,                     (numeric) transaction fee with fee deltas used for mining priority in BTC
+    "ancestor" : n,                     (numeric) modified fees (see above) of in-mempool ancestors (including this one) in BTC
+    "descendant" : n                    (numeric) modified fees (see above) of in-mempool descendants (including this one) in BTC
+  },
+  "depends" : [                         (json array) unconfirmed transactions used as inputs for this transaction
+    "hex",                              (string) parent transaction id
+    ...
+  ],
+  "spentby" : [                         (json array) unconfirmed transactions spending outputs from this transaction
+    "hex",                              (string) child transaction id
+    ...
+  ],
+  "bip125-replaceable" : true|false,    (boolean) Whether this transaction could be replaced due to BIP125 (replace-by-fee)
+  "unbroadcast" : true|false            (boolean) Whether this transaction is currently unbroadcast (initial broadcast not yet acknowledged by any peers)
+}
+
+getmempoolinfo
+
+    {                            (json object)
+  "loaded" : true|false,     (boolean) True if the mempool is fully loaded
+  "size" : n,                (numeric) Current tx count
+  "bytes" : n,               (numeric) Sum of all virtual transaction sizes as defined in BIP 141. Differs from actual serialized size because witness data is discounted
+  "usage" : n,               (numeric) Total memory usage for the mempool
+  "maxmempool" : n,          (numeric) Maximum memory usage for the mempool
+  "mempoolminfee" : n,       (numeric) Minimum fee rate in BTC/kB for tx to be accepted. Is the maximum of minrelaytxfee and minimum mempool fee
+  "minrelaytxfee" : n,       (numeric) Current minimum relay fee for transactions
+  "unbroadcastcount" : n     (numeric) Current number of transactions that haven't passed initial broadcast yet
+}
+
+gettxoutproof ["txid",...] ( "blockhash" )
+
+    [
+  "txid",    (string) A transaction hash
+  ...
+    ]
+
+gettxoutsetinfo ( "hash_type" )
+
+  {                                 (json object)
+  "height" : n,                   (numeric) The current block height (index)
+  "bestblock" : "hex",            (string) The hash of the block at the tip of the chain
+  "transactions" : n,             (numeric) The number of transactions with unspent outputs
+  "txouts" : n,                   (numeric) The number of unspent transaction outputs
+  "bogosize" : n,                 (numeric) A meaningless metric for UTXO set size
+  "hash_serialized_2" : "hex",    (string) The serialized hash (only present if 'hash_serialized_2' hash_type is chosen)
+  "disk_size" : n,                (numeric) The estimated size of the chainstate on disk
+  "total_amount" : n              (numeric) The total amount
+}
+
+  //  Returns statistics about the unspent transaction output set.
+
+preciousblock "blockhash"
+
+    //  Treats block as if received before others with the same work.
+    //  A later preciousblock call can override the effect of an earlier one.
+    //  The effects of preciousblock are not retained across restarts
+
 
 
 
