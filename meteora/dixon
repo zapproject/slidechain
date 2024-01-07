@@ -116,7 +116,9 @@ Then the system checks validity of the subsequent blocks on this fork chain acco
 // Authorized hash field can be left unspecified if no fork desired
 // A fork flag can be set when user controlling the specific forked chain wants to turn a fork block into a root block 
 
-###  MORE CODE
+#
+#
+#  MORE CODE
 
   // use base58 encoding or base65
 
@@ -574,9 +576,49 @@ preciousblock "blockhash"
     //  A later preciousblock call can override the effect of an earlier one.
     //  The effects of preciousblock are not retained across restarts
 
+scantxoutset "action" ( [scanobjects,...] )
 
+  [
+  "descriptor",             (string) An output descriptor
+  {                         (json object) An object with output descriptor and metadata
+    "desc": "str",          (string, required) An output descriptor
+    "range": n or [n,n],    (numeric or array, optional, default=1000) The range of HD chain indexes to explore (either end or [begin,end])
+  },
+  ...
+]
 
+{                                (json object)
+  "success" : true|false,        (boolean) Whether the scan was completed
+  "txouts" : n,                  (numeric) The number of unspent transaction outputs scanned
+  "height" : n,                  (numeric) The current block height (index)
+  "bestblock" : "hex",           (string) The hash of the block at the tip of the chain
+  "unspents" : [                 (json array)
+    {                            (json object)
+      "txid" : "hex",            (string) The transaction id
+      "vout" : n,                (numeric) The vout value
+      "scriptPubKey" : "hex",    (string) The script key
+      "desc" : "str",            (string) A specialized descriptor for the matched scriptPubKey
+      "amount" : n,              (numeric) The total amount in BTC of the unspent output
+      "height" : n               (numeric) Height of the unspent transaction output
+    },
+    ...
+  ],
+  "total_amount" : n             (numeric) The total amount of all found unspent outputs in BTC
+}
 
+verifychain ( checklevel nblocks )
+
+  //  nblocks=[n]
+      where n>0
+
+      curl --user myusername --data-binary '{"jsonrpc": "1.0", "id": "curltest", "method": "verifychain", "params": []}' -H 'content-type: text/plain;' http://127.0.0.1:8332/
+
+verifytxoutproof "proof"
+
+  [           (json array)
+  "hex",    (string) The txid(s) which the proof commits to, or empty array if the proof can not be validated.
+  ...
+]
 
 
 
