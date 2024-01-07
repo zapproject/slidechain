@@ -272,6 +272,7 @@ getblock "blockhash"
   "nextblockhash" : "hex"         (string) The hash of the next block
 }
 
+
 getblockchaininfo
 
   {                                         (json object)
@@ -314,8 +315,80 @@ getblockchaininfo
   "warnings" : "str"                      (string) any network and blockchain warnings
 }
 
+getblockcount
 
+  curl --user myusername --data-binary '{"jsonrpc": "1.0", "id": "curltest", "method": "getblockcount", "params": []}' -H 'content-type: text/plain;' http://127.0.0.1:8332/
 
+getblockfilter "blockhash" ( "filtertype" )
+
+  {                      (json object)
+  "filter" : "hex",    (string) the hex-encoded filter data
+  "header" : "hex"     (string) the hex-encoded filter header
+}
+
+getblockhash height
+  
+    curl --user myusername --data-binary '{"jsonrpc": "1.0", "id": "curltest", "method": "getblockhash", "params": [1000]}' -H 'content-type: text/plain;' http://127.0.0.1:8332/
+
+getblockstats hash_or_height ( stats )
+
+    {                              (json object)
+  "avgfee" : n,                (numeric) Average fee in the block
+  "avgfeerate" : n,            (numeric) Average feerate (in satoshis per virtual byte)
+  "avgtxsize" : n,             (numeric) Average transaction size
+  "blockhash" : "hex",         (string) The block hash (to check for potential reorgs)
+  "feerate_percentiles" : [    (json array) Feerates at the 10th, 25th, 50th, 75th, and 90th percentile weight unit (in satoshis per virtual byte)
+    n,                         (numeric) The 10th percentile feerate
+    n,                         (numeric) The 25th percentile feerate
+    n,                         (numeric) The 50th percentile feerate
+    n,                         (numeric) The 75th percentile feerate
+    n                          (numeric) The 90th percentile feerate
+  ],
+  "height" : n,                (numeric) The height of the block
+  "ins" : n,                   (numeric) The number of inputs (excluding coinbase)
+  "maxfee" : n,                (numeric) Maximum fee in the block
+  "maxfeerate" : n,            (numeric) Maximum feerate (in satoshis per virtual byte)
+  "maxtxsize" : n,             (numeric) Maximum transaction size
+  "medianfee" : n,             (numeric) Truncated median fee in the block
+  "mediantime" : n,            (numeric) The block median time past
+  "mediantxsize" : n,          (numeric) Truncated median transaction size
+  "minfee" : n,                (numeric) Minimum fee in the block
+  "minfeerate" : n,            (numeric) Minimum feerate (in satoshis per virtual byte)
+  "mintxsize" : n,             (numeric) Minimum transaction size
+  "outs" : n,                  (numeric) The number of outputs
+  "subsidy" : n,               (numeric) The block subsidy
+  "swtotal_size" : n,          (numeric) Total size of all segwit transactions
+  "swtotal_weight" : n,        (numeric) Total weight of all segwit transactions
+  "swtxs" : n,                 (numeric) The number of segwit transactions
+  "time" : n,                  (numeric) The block time
+  "total_out" : n,             (numeric) Total amount in all outputs (excluding coinbase and thus reward [ie subsidy + totalfee])
+  "total_size" : n,            (numeric) Total size of all non-coinbase transactions
+  "total_weight" : n,          (numeric) Total weight of all non-coinbase transactions
+  "totalfee" : n,              (numeric) The fee total
+  "txs" : n,                   (numeric) The number of transactions (including coinbase)
+  "utxo_increase" : n,         (numeric) The increase/decrease in the number of unspent outputs
+  "utxo_size_inc" : n          (numeric) The increase/decrease in size for the utxo index (not discounting op_return and similar)
+}
+
+  // see valid-fork below 
+
+getchaintips
+
+    [                        (json array)
+  {                      (json object)
+    "height" : n,        (numeric) height of the chain tip
+    "hash" : "hex",      (string) block hash of the tip
+    "branchlen" : n,     (numeric) zero for main chain, otherwise length of branch connecting the tip to the main chain
+    "status" : "str"     (string) status of the chain, "active" for the main chain
+                         Possible values for status:
+                         1.  "invalid"               This branch contains at least one invalid block
+                         2.  "headers-only"          Not all blocks for this branch are available, but the headers are valid
+                         3.  "valid-headers"         All blocks are available for this branch, but they were never fully validated
+                         4.  "valid-fork"            This branch is not part of the active chain, but is fully validated
+                         5.  "active"                This is the tip of the active main chain, which is certainly valid
+  },
+  ...
+]
 
 getblocktemplate ( "template_request" )
 
@@ -372,9 +445,59 @@ bitcoin-cli getblocktemplate '{"rules": ["segwit"]}'
   "default_witness_commitment" : "str"     (string, optional) a valid witness commitment for the unmodified block template
 }
 
+getchaintxstats ( nblocks "blockhash" )
 
+    {                                       (json object)
+  "time" : xxx,                         (numeric) The timestamp for the final block in the window, expressed in UNIX epoch time
+  "txcount" : n,                        (numeric) The total number of transactions in the chain up to that point
+  "window_final_block_hash" : "hex",    (string) The hash of the final block in the window
+  "window_final_block_height" : n,      (numeric) The height of the final block in the window.
+  "window_block_count" : n,             (numeric) Size of the window in number of blocks
+  "window_tx_count" : n,                (numeric) The number of transactions in the window. Only returned if "window_block_count" is > 0
+  "window_interval" : n,                (numeric) The elapsed time in the window in seconds. Only returned if "window_block_count" is > 0
+  "txrate" : n                          (numeric) The average rate of transactions per second in the window. Only returned if "window_interval" is > 0
+}
 
+getdifficulty
 
+  curl --user myusername --data-binary '{"jsonrpc": "1.0", "id": "curltest", "method": "getdifficulty", "params": []}' -H 'content-type: text/plain;' http://127.0.0.1:8332/
+
+getmempoolancestors "txid"
+
+  {                                         (json object)
+  "transactionid" : {                     (json object)
+    "vsize" : n,                          (numeric) virtual transaction size as defined in BIP 141. This is different from actual serialized size for witness transactions as witness data is discounted.
+    "weight" : n,                         (numeric) transaction weight as defined in BIP 141.
+    "fee" : n,                            (numeric) transaction fee in BTC (DEPRECATED)
+    "modifiedfee" : n,                    (numeric) transaction fee with fee deltas used for mining priority (DEPRECATED)
+    "time" : xxx,                         (numeric) local time transaction entered pool in seconds since 1 Jan 1970 GMT
+    "height" : n,                         (numeric) block height when transaction entered pool
+    "descendantcount" : n,                (numeric) number of in-mempool descendant transactions (including this one)
+    "descendantsize" : n,                 (numeric) virtual transaction size of in-mempool descendants (including this one)
+    "descendantfees" : n,                 (numeric) modified fees (see above) of in-mempool descendants (including this one) (DEPRECATED)
+    "ancestorcount" : n,                  (numeric) number of in-mempool ancestor transactions (including this one)
+    "ancestorsize" : n,                   (numeric) virtual transaction size of in-mempool ancestors (including this one)
+    "ancestorfees" : n,                   (numeric) modified fees (see above) of in-mempool ancestors (including this one) (DEPRECATED)
+    "wtxid" : "hex",                      (string) hash of serialized transaction, including witness data
+    "fees" : {                            (json object)
+      "base" : n,                         (numeric) transaction fee in BTC
+      "modified" : n,                     (numeric) transaction fee with fee deltas used for mining priority in BTC
+      "ancestor" : n,                     (numeric) modified fees (see above) of in-mempool ancestors (including this one) in BTC
+      "descendant" : n                    (numeric) modified fees (see above) of in-mempool descendants (including this one) in BTC
+    },
+    "depends" : [                         (json array) unconfirmed transactions used as inputs for this transaction
+      "hex",                              (string) parent transaction id
+      ...
+    ],
+    "spentby" : [                         (json array) unconfirmed transactions spending outputs from this transaction
+      "hex",                              (string) child transaction id
+      ...
+    ],
+    "bip125-replaceable" : true|false,    (boolean) Whether this transaction could be replaced due to BIP125 (replace-by-fee)
+    "unbroadcast" : true|false            (boolean) Whether this transaction is currently unbroadcast (initial broadcast not yet acknowledged by any peers)
+  },
+  ...
+}
 
 
 
