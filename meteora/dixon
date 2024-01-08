@@ -226,8 +226,6 @@ generateblock "output" ["rawtx/txid",...]
 
 bitcoin-cli generateblock "myaddress" '["rawtx", "mempool_txid"]'
 
-
-
   // number of new blocks to be generated 
 
 generatetoaddress nblocks "address" ( maxtries )
@@ -373,6 +371,82 @@ getblockstats hash_or_height ( stats )
 }
 
   // see valid-fork below 
+
+// soft forks as per BIP 9
+
+ State GetStateForBlock(block) {
+        if (block.height == 0) {
+            return DEFINED;
+        }
+
+// All blocks within retarget period have the same state, i.e., if floor(block1.height / 2016) = floor(block2.height / 2016), then blocks will have the same state for every deployment.
+
+        if ((block.height % 2016) != 0) {
+            return GetStateForBlock(block.parent);
+        }
+
+//  Otherwise, the next state depends on the previous state:
+
+        switch (GetStateForBlock(GetAncestorAtHeight(block, block.height - 2016))) {
+
+// remain in initial state until pass start time or timeout. 
+// GetMedianTimePast refers to median nTime of a block and its 10 predecessors. 
+// GetMedianTimePast(block.parent) is treated as a monotonic clock defined by the chain.
+// With each block and soft fork, there is one of five possible deployment states. 
+// DEFINED is the first state soft forks start in; genesis block is in this state.
+// STARTED for blocks past the starttime.
+// LOCKED_IN for one retarget period after the first retarget period with STARTED blocks,
+of which at least threshold have the associated bit set in nVersion.
+// ACTIVE for all blocks after LOCKED_IN retarget period, is a terminal state, no change possible after this state
+// FAILED for one retarget period past the timeout time, if LOCKED_IN was not reached, also a terminal state.
+
+// After period in STARTED state, if go past the timeout, switch to FAILED state. 
+// If not past timeout, tally the bits set, and transition to LOCKED_IN state if sufficient number of blocks in the past period set the deployment bit in their version numbers. 
+// Threshold is ≥1916 blocks (95% of 2016), or ≥1512 for testnet (75% of 2016). 
+// Transition to FAILED state takes precedence, as otherwise an ambiguity can arise. 
+// There could be two non-overlapping deployments on the same bit, where first one transitions to LOCKED_IN while second simultaneously transitions to STARTED, which would mean both would demand setting the bit.
+
+        case DEFINED:
+            if (GetMedianTimePast(block.parent) >= timeout) {
+                return FAILED;
+            }
+            if (GetMedianTimePast(block.parent) >= starttime) {
+                return STARTED;
+            }
+            return DEFINED;
+
+      case STARTED: 
+            if (GetMedianTimePast(block.parent) >= timeout) {
+                return FAILED;
+            }
+            int count = 0;
+            walk = block;
+            for (i = 0; i < 2016; i++) {
+                walk = walk.parent;
+                if (walk.nVersion & 0xE0000000 == 0x20000000 && (walk.nVersion >> bit) & 1 == 1) {
+                    count++;
+                }
+            }
+            if (count >= threshold) {
+                return LOCKED_IN;
+            }
+            return STARTED;
+
+// After a retarget period of LOCKED_IN, automatically transition to ACTIVE.
+
+        case LOCKED_IN:
+            return ACTIVE;
+
+// Note that both ACTIVE and FAILED are terminal states, no change once state reached.
+
+        case ACTIVE:
+            return ACTIVE;
+        case FAILED:
+            return FAILED;
+        }
+    }
+
+// a block's state never depends on its own nVersion, only that of its ancestors
 
 getchaintips
 
