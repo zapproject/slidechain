@@ -436,6 +436,148 @@ inline uint160 RIPEMD160(Span<const unsigned char> data)
 
 #endif // BITCOIN_SCRIPT_SCRIPT_H
 
+arith_uint256 GetBlockProof(const CBlockIndex& block);
+/** Return the time it would take to redo the work difference between from and to, assuming the current hashrate corresponds to the difficulty at tip, in seconds. */
+int64_t GetBlockProofEquivalentTime(const CBlockIndex& to, const CBlockIndex& from, const CBlockIndex& tip, const Consensus::Params&);
+/** Find the forking point between two chain tips. */
+const CBlockIndex* LastCommonAncestor(const CBlockIndex* pa, const CBlockIndex* pb);
+
+
+/** Used to marshal pointers into hashes for db storage. */
+class CDiskBlockIndex : public CBlockIndex
+{
+    /** Historically CBlockLocator's version field has been written to disk
+     * streams as the client version, but the value has never been used.
+     *
+     * Hard-code to the highest client version ever written.
+     * SerParams can be used if the field requires any meaning in the future.
+     **/
+    static constexpr int DUMMY_VERSION = 259900;
+
+public:
+    uint256 hashPrev;
+
+    CDiskBlockIndex()
+    {
+        hashPrev = uint256();
+    }
+
+    explicit CDiskBlockIndex(const CBlockIndex* pindex) : CBlockIndex(*pindex)
+    {
+        hashPrev = (pprev ? pprev->GetBlockHash() : uint256());
+    }
+
+    SERIALIZE_METHODS(CDiskBlockIndex, obj)
+    {
+        LOCK(::cs_main);
+        int _nVersion = DUMMY_VERSION;
+        READWRITE(VARINT_MODE(_nVersion, VarIntMode::NONNEGATIVE_SIGNED));
+
+        READWRITE(VARINT_MODE(obj.nHeight, VarIntMode::NONNEGATIVE_SIGNED));
+        READWRITE(VARINT(obj.nStatus));
+        READWRITE(VARINT(obj.nTx));
+        if (obj.nStatus & (BLOCK_HAVE_DATA | BLOCK_HAVE_UNDO)) READWRITE(VARINT_MODE(obj.nFile, VarIntMode::NONNEGATIVE_SIGNED));
+        if (obj.nStatus & BLOCK_HAVE_DATA) READWRITE(VARINT(obj.nDataPos));
+        if (obj.nStatus & BLOCK_HAVE_UNDO) READWRITE(VARINT(obj.nUndoPos));
+
+        // block header
+        READWRITE(obj.nVersion);
+        READWRITE(obj.hashPrev);
+        READWRITE(obj.hashMerkleRoot);
+        READWRITE(obj.nTime);
+        READWRITE(obj.nBits);
+        READWRITE(obj.nNonce);
+    }
+
+    uint256 ConstructBlockHash() const
+    {
+        CBlockHeader block;
+        block.nVersion = nVersion;
+        block.hashPrevBlock = hashPrev;
+        block.hashMerkleRoot = hashMerkleRoot;
+        block.nTime = nTime;
+        block.nBits = nBits;
+        block.nNonce = nNonce;
+        return block.GetHash();
+    }
+
+    uint256 GetBlockHash() = delete;
+    std::string ToString() = delete;
+};
+
+/** An in-memory indexed chain of blocks. */
+class CChain
+{
+private:
+    std::vector<CBlockIndex*> vChain;
+
+public:
+    CChain() = default;
+    CChain(const CChain&) = delete;
+    CChain& operator=(const CChain&) = delete;
+
+    /** Returns the index entry for the genesis block of this chain, or nullptr if none. */
+    CBlockIndex* Genesis() const
+    {
+        return vChain.size() > 0 ? vChain[0] : nullptr;
+    }
+
+    /** Returns the index entry for the tip of this chain, or nullptr if none. */
+    CBlockIndex* Tip() const
+    {
+        return vChain.size() > 0 ? vChain[vChain.size() - 1] : nullptr;
+    }
+
+    /** Returns the index entry at a particular height in this chain, or nullptr if no such height exists. */
+    CBlockIndex* operator[](int nHeight) const
+    {
+        if (nHeight < 0 || nHeight >= (int)vChain.size())
+            return nullptr;
+        return vChain[nHeight];
+    }
+
+    /** Efficiently check whether a block is present in this chain. */
+    bool Contains(const CBlockIndex* pindex) const
+    {
+        return (*this)[pindex->nHeight] == pindex;
+    }
+
+    /** Find the successor of a block in this chain, or nullptr if the given index is not found or is the tip. */
+    CBlockIndex* Next(const CBlockIndex* pindex) const
+    {
+        if (Contains(pindex))
+            return (*this)[pindex->nHeight + 1];
+        else
+            return nullptr;
+    }
+
+    /** Return the maximal height in the chain. Is equal to chain.Tip() ? chain.Tip()->nHeight : -1. */
+    int Height() const
+    {
+        return int(vChain.size()) - 1;
+    }
+
+    /** Set/initialize a chain with a given tip. */
+    void SetTip(CBlockIndex& block);
+
+    /** Return a CBlockLocator that refers to the tip in of this chain. */
+    CBlockLocator GetLocator() const;
+
+    /** Find the last common block between this chain and a block index entry. */
+    const CBlockIndex* FindFork(const CBlockIndex* pindex) const;
+
+    /** Find the earliest block with timestamp equal or greater than the given time and height equal or greater than the given height. */
+    CBlockIndex* FindEarliestAtLeast(int64_t nTime, int height) const;
+};
+
+/** Get a locator for a block index entry. */
+CBlockLocator GetLocator(const CBlockIndex* index);
+
+/** Construct a list of hash entries to put in a locator.  */
+std::vector<uint256> LocatorEntries(const CBlockIndex* index);
+
+#endif // BITCOIN_CHAIN_H
+
 CBlockIndex* CBlockIndex::GetAncestor(int height)
 {
     return const_cast<CBlockIndex*>(static_cast<const CBlockIndex*>(this)->GetAncestor(height));
@@ -726,6 +868,54 @@ generateblock "output" ["rawtx/txid",...]
 {                    (json object)
   "hash" : "hex"     (string) hash of generated block
 }
+
+#ifndef BITCOIN_RPC_RAWTRANSACTION_UTIL_H
+#define BITCOIN_RPC_RAWTRANSACTION_UTIL_H
+
+#include <map>
+#include <string>
+#include <optional>
+
+struct bilingual_str;
+class FillableSigningProvider;
+class UniValue;
+struct CMutableTransaction;
+class Coin;
+class COutPoint;
+class SigningProvider;
+
+/**
+ * Sign a transaction with the given keystore and previous transactions
+ *
+ * @param  mtx           The transaction to-be-signed
+ * @param  keystore      Temporary keystore containing signing keys
+ * @param  coins         Map of unspent outputs
+ * @param  hashType      The signature hash type
+ * @param result         JSON object where signed transaction results accumulate
+ */
+void SignTransaction(CMutableTransaction& mtx, const SigningProvider* keystore, const std::map<COutPoint, Coin>& coins, const UniValue& hashType, UniValue& result);
+void SignTransactionResultToJSON(CMutableTransaction& mtx, bool complete, const std::map<COutPoint, Coin>& coins, const std::map<int, bilingual_str>& input_errors, UniValue& result);
+
+/**
+  * Parse a prevtxs UniValue array and get the map of coins from it
+  *
+  * @param  prevTxsUnival Array of previous txns outputs that tx depends on but may not yet be in the block chain
+  * @param  keystore      A pointer to the temporary keystore if there is one
+  * @param  coins         Map of unspent outputs - coins in mempool and current chain UTXO set, may be extended by previous txns outputs after call
+  */
+void ParsePrevouts(const UniValue& prevTxsUnival, FillableSigningProvider* keystore, std::map<COutPoint, Coin>& coins);
+
+
+/** Normalize univalue-represented inputs and add them to the transaction */
+void AddInputs(CMutableTransaction& rawTx, const UniValue& inputs_in, bool rbf);
+
+/** Normalize univalue-represented outputs and add them to the transaction */
+void AddOutputs(CMutableTransaction& rawTx, const UniValue& outputs_in);
+
+/** Create a transaction from univalue parameters */
+CMutableTransaction ConstructTransaction(const UniValue& inputs_in, const UniValue& outputs_in, const UniValue& locktime, std::optional<bool> rbf);
+
+#endif // BITCOIN_RPC_RAWTRANSACTION_UTIL_H
 
 bitcoin-cli generateblock "myaddress" '["rawtx", "mempool_txid"]'
 
