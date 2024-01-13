@@ -16,11 +16,25 @@ Blockchain_two: client chain
         Sets forth rules which client can change at will
 Blockchain_three: credentials chain
         Credentials admit or deny use of system to applicants
-Blockchain_four: event operations chain (multiple chains)
-        Each chain manages one or more various functions of event
-Blockchain_five: counting chain
-        Chain for recording events, counting or tallying items 
+Blockchain_four: counting chain (can be >1)
+        Chain for recording events, account balances, counting or tallying items 
 	Items can be points, chips, credits, votes, etc.
+Blockchain_five: 
+	event operations chain (multiple chains)
+        Each chain manages one or more various functions of event
+	Can be segregated by class of blockchain user
+ 	Example is participants competing in contest, e.g., horse racing
+Blockchain_six:
+	separate event operations chain (multiple chains)
+ 	segregated by class of blockchain user
+  	example is event participants wagering on horse racing
+Blockchain_seven:
+	separate event operations chain (multiple chains)
+ 	segregated by class of blockchain user
+  	example is "the house" racetrack setting odds on wagering
+   	can have system with multiple venues all at once
+
+// just say neigh
 
 
 
