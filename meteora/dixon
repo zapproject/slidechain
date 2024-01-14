@@ -347,6 +347,589 @@ CScript BuildScript(Ts&&... inputs)
     return ret;
 }
 
+#ifndef BITCOIN_CONSENSUS_MERKLE_H
+#define BITCOIN_CONSENSUS_MERKLE_H
+
+#include <vector>
+
+#include <primitives/block.h>
+#include <uint256.h>
+
+uint256 ComputeMerkleRoot(std::vector<uint256> hashes, bool* mutated = nullptr);
+
+/*
+ * Compute the Merkle root of the transactions in a block.
+ * *mutated is set to true if a duplicated subtree was found.
+ */
+uint256 BlockMerkleRoot(const CBlock& block, bool* mutated = nullptr);
+
+/*
+ * Compute the Merkle root of the witness transactions in a block.
+ * *mutated is set to true if a duplicated subtree was found.
+ */
+uint256 BlockWitnessMerkleRoot(const CBlock& block, bool* mutated = nullptr);
+
+#endif // BITCOIN_CONSENSUS_MERKLE_H
+
+#ifndef BITCOIN_CONSENSUS_PARAMS_H
+#define BITCOIN_CONSENSUS_PARAMS_H
+
+#include <uint256.h>
+
+#include <chrono>
+#include <limits>
+#include <map>
+#include <vector>
+
+namespace Consensus {
+
+/**
+ * A buried deployment is one where the height of the activation has been hardcoded into
+ * the client implementation long after the consensus change has activated. See BIP 90.
+ */
+enum BuriedDeployment : int16_t {
+    // buried deployments get negative values to avoid overlap with DeploymentPos
+    DEPLOYMENT_HEIGHTINCB = std::numeric_limits<int16_t>::min(),
+    DEPLOYMENT_CLTV,
+    DEPLOYMENT_DERSIG,
+    DEPLOYMENT_CSV,
+    DEPLOYMENT_SEGWIT,
+};
+constexpr bool ValidDeployment(BuriedDeployment dep) { return dep <= DEPLOYMENT_SEGWIT; }
+
+enum DeploymentPos : uint16_t {
+    DEPLOYMENT_TESTDUMMY,
+    DEPLOYMENT_TAPROOT, // Deployment of Schnorr/Taproot (BIPs 340-342)
+    // NOTE: Also add new deployments to VersionBitsDeploymentInfo in deploymentinfo.cpp
+    MAX_VERSION_BITS_DEPLOYMENTS
+};
+constexpr bool ValidDeployment(DeploymentPos dep) { return dep < MAX_VERSION_BITS_DEPLOYMENTS; }
+
+/**
+ * Struct for each individual consensus rule change using BIP9.
+ */
+struct BIP9Deployment {
+    /** Bit position to select the particular bit in nVersion. */
+    int bit{28};
+    /** Start MedianTime for version bits miner confirmation. Can be a date in the past */
+    int64_t nStartTime{NEVER_ACTIVE};
+    /** Timeout/expiry MedianTime for the deployment attempt. */
+    int64_t nTimeout{NEVER_ACTIVE};
+    /** If lock in occurs, delay activation until at least this block
+     *  height.  Note that activation will only occur on a retarget
+     *  boundary.
+     */
+    int min_activation_height{0};
+
+    /** Constant for nTimeout very far in the future. */
+    static constexpr int64_t NO_TIMEOUT = std::numeric_limits<int64_t>::max();
+
+    /** Special value for nStartTime indicating that the deployment is always active.
+     *  This is useful for testing, as it means tests don't need to deal with the activation
+     *  process (which takes at least 3 BIP9 intervals). Only tests that specifically test the
+     *  behaviour during activation cannot use this. */
+    static constexpr int64_t ALWAYS_ACTIVE = -1;
+
+    /** Special value for nStartTime indicating that the deployment is never active.
+     *  This is useful for integrating the code changes for a new feature
+     *  prior to deploying it on some or all networks. */
+    static constexpr int64_t NEVER_ACTIVE = -2;
+};
+
+/**
+ * Parameters that influence chain consensus.
+ */
+struct Params {
+    uint256 hashGenesisBlock;
+    int nSubsidyHalvingInterval;
+    /**
+     * Hashes of blocks that
+     * - are known to be consensus valid, and
+     * - buried in the chain, and
+     * - fail if the default script verify flags are applied.
+     */
+    std::map<uint256, uint32_t> script_flag_exceptions;
+    /** Block height and hash at which BIP34 becomes active */
+    int BIP34Height;
+    uint256 BIP34Hash;
+    /** Block height at which BIP65 becomes active */
+    int BIP65Height;
+    /** Block height at which BIP66 becomes active */
+    int BIP66Height;
+    /** Block height at which CSV (BIP68, BIP112 and BIP113) becomes active */
+    int CSVHeight;
+    /** Block height at which Segwit (BIP141, BIP143 and BIP147) becomes active.
+     * Note that segwit v0 script rules are enforced on all blocks except the
+     * BIP 16 exception blocks. */
+    int SegwitHeight;
+    /** Don't warn about unknown BIP 9 activations below this height.
+     * This prevents us from warning about the CSV and segwit activations. */
+    int MinBIP9WarningHeight;
+    /**
+     * Minimum blocks including miner confirmation of the total of 2016 blocks in a retargeting period,
+     * (nPowTargetTimespan / nPowTargetSpacing) which is also used for BIP9 deployments.
+     * Examples: 1916 for 95%, 1512 for testchains.
+     */
+    uint32_t nRuleChangeActivationThreshold;
+    uint32_t nMinerConfirmationWindow;
+    BIP9Deployment vDeployments[MAX_VERSION_BITS_DEPLOYMENTS];
+    /** Proof of work parameters */
+    uint256 powLimit;
+    bool fPowAllowMinDifficultyBlocks;
+    bool fPowNoRetargeting;
+    int64_t nPowTargetSpacing;
+    int64_t nPowTargetTimespan;
+    std::chrono::seconds PowTargetSpacing() const
+    {
+        return std::chrono::seconds{nPowTargetSpacing};
+    }
+    int64_t DifficultyAdjustmentInterval() const { return nPowTargetTimespan / nPowTargetSpacing; }
+    /** The best chain should have at least this much work */
+    uint256 nMinimumChainWork;
+    /** By default assume that the signatures in ancestors of this block are valid */
+    uint256 defaultAssumeValid;
+
+    /**
+     * If true, witness commitments contain a payload equal to a Bitcoin Script solution
+     * to the signet challenge. See BIP325.
+     */
+    bool signet_blocks{false};
+    std::vector<uint8_t> signet_challenge;
+
+    int DeploymentHeight(BuriedDeployment dep) const
+    {
+        switch (dep) {
+        case DEPLOYMENT_HEIGHTINCB:
+            return BIP34Height;
+        case DEPLOYMENT_CLTV:
+            return BIP65Height;
+        case DEPLOYMENT_DERSIG:
+            return BIP66Height;
+        case DEPLOYMENT_CSV:
+            return CSVHeight;
+        case DEPLOYMENT_SEGWIT:
+            return SegwitHeight;
+        } // no default case, so the compiler can warn about missing cases
+        return std::numeric_limits<int>::max();
+    }
+};
+
+} // namespace Consensus
+
+#endif // BITCOIN_CONSENSUS_PARAMS_H
+
+#ifndef BITCOIN_CONSENSUS_TX_VERIFY_H
+#define BITCOIN_CONSENSUS_TX_VERIFY_H
+
+#include <consensus/amount.h>
+
+#include <stdint.h>
+#include <vector>
+
+class CBlockIndex;
+class CCoinsViewCache;
+class CTransaction;
+class TxValidationState;
+
+/** Transaction validation functions */
+
+namespace Consensus {
+/**
+ * Check whether all inputs of this transaction are valid (no double spends and amounts)
+ * This does not modify the UTXO set. This does not check scripts and sigs.
+ * @param[out] txfee Set to the transaction fee if successful.
+ * Preconditions: tx.IsCoinBase() is false.
+ */
+[[nodiscard]] bool CheckTxInputs(const CTransaction& tx, TxValidationState& state, const CCoinsViewCache& inputs, int nSpendHeight, CAmount& txfee);
+} // namespace Consensus
+
+/** Auxiliary functions for transaction validation (ideally should not be exposed) */
+
+/**
+ * Count ECDSA signature operations the old-fashioned (pre-0.6) way
+ * @return number of sigops this transaction's outputs will produce when spent
+ * @see CTransaction::FetchInputs
+ */
+unsigned int GetLegacySigOpCount(const CTransaction& tx);
+
+/**
+ * Count ECDSA signature operations in pay-to-script-hash inputs.
+ *
+ * @param[in] mapInputs Map of previous transactions that have outputs we're spending
+ * @return maximum number of sigops required to validate this transaction's inputs
+ * @see CTransaction::FetchInputs
+ */
+unsigned int GetP2SHSigOpCount(const CTransaction& tx, const CCoinsViewCache& mapInputs);
+
+/**
+ * Compute total signature operation cost of a transaction.
+ * @param[in] tx     Transaction for which we are computing the cost
+ * @param[in] inputs Map of previous transactions that have outputs we're spending
+ * @param[in] flags Script verification flags
+ * @return Total signature operation cost of tx
+ */
+int64_t GetTransactionSigOpCost(const CTransaction& tx, const CCoinsViewCache& inputs, uint32_t flags);
+
+/**
+ * Check if transaction is final and can be included in a block with the
+ * specified height and time. Consensus critical.
+ */
+bool IsFinalTx(const CTransaction &tx, int nBlockHeight, int64_t nBlockTime);
+
+/**
+ * Calculates the block height and previous block's median time past at
+ * which the transaction will be considered final in the context of BIP 68.
+ * For each input that is not sequence locked, the corresponding entries in
+ * prevHeights are set to 0 as they do not affect the calculation.
+ */
+std::pair<int, int64_t> CalculateSequenceLocks(const CTransaction &tx, int flags, std::vector<int>& prevHeights, const CBlockIndex& block);
+
+bool EvaluateSequenceLocks(const CBlockIndex& block, std::pair<int, int64_t> lockPair);
+/**
+ * Check if transaction is final per BIP 68 sequence numbers and can be included in a block.
+ * Consensus critical. Takes as input a list of heights at which tx's inputs (in order) confirmed.
+ */
+bool SequenceLocks(const CTransaction &tx, int flags, std::vector<int>& prevHeights, const CBlockIndex& block);
+
+#endif // BITCOIN_CONSENSUS_TX_VERIFY_H
+
+#ifndef BITCOIN_CONSENSUS_VALIDATION_H
+#define BITCOIN_CONSENSUS_VALIDATION_H
+
+#include <string>
+#include <consensus/consensus.h>
+#include <primitives/transaction.h>
+#include <primitives/block.h>
+
+/** Index marker for when no witness commitment is present in a coinbase transaction. */
+static constexpr int NO_WITNESS_COMMITMENT{-1};
+
+/** Minimum size of a witness commitment structure. Defined in BIP 141. **/
+static constexpr size_t MINIMUM_WITNESS_COMMITMENT{38};
+
+/** A "reason" why a transaction was invalid, suitable for determining whether the
+  * provider of the transaction should be banned/ignored/disconnected/etc.
+  */
+enum class TxValidationResult {
+    TX_RESULT_UNSET = 0,     //!< initial value. Tx has not yet been rejected
+    TX_CONSENSUS,            //!< invalid by consensus rules
+    /**
+     * Invalid by a change to consensus rules more recent than SegWit.
+     * Currently unused as there are no such consensus rule changes, and any download
+     * sources realistically need to support SegWit in order to provide useful data,
+     * so differentiating between always-invalid and invalid-by-pre-SegWit-soft-fork
+     * is uninteresting.
+     */
+    TX_RECENT_CONSENSUS_CHANGE,
+    TX_INPUTS_NOT_STANDARD,   //!< inputs (covered by txid) failed policy rules
+    TX_NOT_STANDARD,          //!< otherwise didn't meet our local policy rules
+    TX_MISSING_INPUTS,        //!< transaction was missing some of its inputs
+    TX_PREMATURE_SPEND,       //!< transaction spends a coinbase too early, or violates locktime/sequence locks
+    /**
+     * Transaction might have a witness prior to SegWit
+     * activation, or witness may have been malleated (which includes
+     * non-standard witnesses).
+     */
+    TX_WITNESS_MUTATED,
+    /**
+     * Transaction is missing a witness.
+     */
+    TX_WITNESS_STRIPPED,
+    /**
+     * Tx already in mempool or conflicts with a tx in the chain
+     * (if it conflicts with another tx in mempool, we use MEMPOOL_POLICY as it failed to reach the RBF threshold)
+     * Currently this is only used if the transaction already exists in the mempool or on chain.
+     */
+    TX_CONFLICT,
+    TX_MEMPOOL_POLICY,        //!< violated mempool's fee/size/descendant/RBF/etc limits
+    TX_NO_MEMPOOL,            //!< this node does not have a mempool so can't validate the transaction
+    TX_RECONSIDERABLE,        //!< fails some policy, but might be acceptable if submitted in a (different) package
+    TX_UNKNOWN,               //!< transaction was not validated because package failed
+};
+
+/** A "reason" why a block was invalid, suitable for determining whether the
+  * provider of the block should be banned/ignored/disconnected/etc.
+  * These are much more granular than the rejection codes, which may be more
+  * useful for some other use-cases.
+  */
+enum class BlockValidationResult {
+    BLOCK_RESULT_UNSET = 0,  //!< initial value. Block has not yet been rejected
+    BLOCK_CONSENSUS,         //!< invalid by consensus rules (excluding any below reasons)
+    /**
+     * Invalid by a change to consensus rules more recent than SegWit.
+     * Currently unused as there are no such consensus rule changes, and any download
+     * sources realistically need to support SegWit in order to provide useful data,
+     * so differentiating between always-invalid and invalid-by-pre-SegWit-soft-fork
+     * is uninteresting.
+     */
+    BLOCK_RECENT_CONSENSUS_CHANGE,
+    BLOCK_CACHED_INVALID,    //!< this block was cached as being invalid and we didn't store the reason why
+    BLOCK_INVALID_HEADER,    //!< invalid proof of work or time too old
+    BLOCK_MUTATED,           //!< the block's data didn't match the data committed to by the PoW
+    BLOCK_MISSING_PREV,      //!< We don't have the previous block the checked one is built on
+    BLOCK_INVALID_PREV,      //!< A block this one builds on is invalid
+    BLOCK_TIME_FUTURE,       //!< block timestamp was > 2 hours in the future (or our clock is bad)
+    BLOCK_CHECKPOINT,        //!< the block failed to meet one of our checkpoints
+    BLOCK_HEADER_LOW_WORK    //!< the block header may be on a too-little-work chain
+};
+
+
+
+/** Template for capturing information about block/transaction validation. This is instantiated
+ *  by TxValidationState and BlockValidationState for validation information on transactions
+ *  and blocks respectively. */
+template <typename Result>
+class ValidationState
+{
+private:
+    enum class ModeState {
+        M_VALID,   //!< everything ok
+        M_INVALID, //!< network rule violation (DoS value may be set)
+        M_ERROR,   //!< run-time error
+    } m_mode{ModeState::M_VALID};
+    Result m_result{};
+    std::string m_reject_reason;
+    std::string m_debug_message;
+
+public:
+    bool Invalid(Result result,
+                 const std::string& reject_reason = "",
+                 const std::string& debug_message = "")
+    {
+        m_result = result;
+        m_reject_reason = reject_reason;
+        m_debug_message = debug_message;
+        if (m_mode != ModeState::M_ERROR) m_mode = ModeState::M_INVALID;
+        return false;
+    }
+    bool Error(const std::string& reject_reason)
+    {
+        if (m_mode == ModeState::M_VALID)
+            m_reject_reason = reject_reason;
+        m_mode = ModeState::M_ERROR;
+        return false;
+    }
+    bool IsValid() const { return m_mode == ModeState::M_VALID; }
+    bool IsInvalid() const { return m_mode == ModeState::M_INVALID; }
+    bool IsError() const { return m_mode == ModeState::M_ERROR; }
+    Result GetResult() const { return m_result; }
+    std::string GetRejectReason() const { return m_reject_reason; }
+    std::string GetDebugMessage() const { return m_debug_message; }
+    std::string ToString() const
+    {
+        if (IsValid()) {
+            return "Valid";
+        }
+
+        if (!m_debug_message.empty()) {
+            return m_reject_reason + ", " + m_debug_message;
+        }
+
+        return m_reject_reason;
+    }
+};
+
+class TxValidationState : public ValidationState<TxValidationResult> {};
+class BlockValidationState : public ValidationState<BlockValidationResult> {};
+
+// These implement the weight = (stripped_size * 4) + witness_size formula,
+// using only serialization with and without witness data. As witness_size
+// is equal to total_size - stripped_size, this formula is identical to:
+// weight = (stripped_size * 3) + total_size.
+static inline int32_t GetTransactionWeight(const CTransaction& tx)
+{
+    return ::GetSerializeSize(TX_NO_WITNESS(tx)) * (WITNESS_SCALE_FACTOR - 1) + ::GetSerializeSize(TX_WITH_WITNESS(tx));
+}
+static inline int64_t GetBlockWeight(const CBlock& block)
+{
+    return ::GetSerializeSize(TX_NO_WITNESS(block)) * (WITNESS_SCALE_FACTOR - 1) + ::GetSerializeSize(TX_WITH_WITNESS(block));
+}
+static inline int64_t GetTransactionInputWeight(const CTxIn& txin)
+{
+    // scriptWitness size is added here because witnesses and txins are split up in segwit serialization.
+    return ::GetSerializeSize(TX_NO_WITNESS(txin)) * (WITNESS_SCALE_FACTOR - 1) + ::GetSerializeSize(TX_WITH_WITNESS(txin)) + ::GetSerializeSize(txin.scriptWitness.stack);
+}
+
+/** Compute at which vout of the block's coinbase transaction the witness commitment occurs, or -1 if not found */
+inline int GetWitnessCommitmentIndex(const CBlock& block)
+{
+    int commitpos = NO_WITNESS_COMMITMENT;
+    if (!block.vtx.empty()) {
+        for (size_t o = 0; o < block.vtx[0]->vout.size(); o++) {
+            const CTxOut& vout = block.vtx[0]->vout[o];
+            if (vout.scriptPubKey.size() >= MINIMUM_WITNESS_COMMITMENT &&
+                vout.scriptPubKey[0] == OP_RETURN &&
+                vout.scriptPubKey[1] == 0x24 &&
+                vout.scriptPubKey[2] == 0xaa &&
+                vout.scriptPubKey[3] == 0x21 &&
+                vout.scriptPubKey[4] == 0xa9 &&
+                vout.scriptPubKey[5] == 0xed) {
+                commitpos = o;
+            }
+        }
+    }
+    return commitpos;
+}
+
+#endif // BITCOIN_CONSENSUS_VALIDATION_H
+
+#ifndef BITCOIN_CRYPTO_COMMON_H
+#define BITCOIN_CRYPTO_COMMON_H
+
+#if defined(HAVE_CONFIG_H)
+#include <config/bitcoin-config.h>
+#endif
+
+#include <stdint.h>
+#include <string.h>
+
+#include <compat/endian.h>
+
+uint16_t static inline ReadLE16(const unsigned char* ptr)
+{
+    uint16_t x;
+    memcpy(&x, ptr, 2);
+    return le16toh(x);
+}
+
+uint32_t static inline ReadLE32(const unsigned char* ptr)
+{
+    uint32_t x;
+    memcpy(&x, ptr, 4);
+    return le32toh(x);
+}
+
+uint64_t static inline ReadLE64(const unsigned char* ptr)
+{
+    uint64_t x;
+    memcpy(&x, ptr, 8);
+    return le64toh(x);
+}
+
+void static inline WriteLE16(unsigned char* ptr, uint16_t x)
+{
+    uint16_t v = htole16(x);
+    memcpy(ptr, &v, 2);
+}
+
+void static inline WriteLE32(unsigned char* ptr, uint32_t x)
+{
+    uint32_t v = htole32(x);
+    memcpy(ptr, &v, 4);
+}
+
+void static inline WriteLE64(unsigned char* ptr, uint64_t x)
+{
+    uint64_t v = htole64(x);
+    memcpy(ptr, &v, 8);
+}
+
+uint16_t static inline ReadBE16(const unsigned char* ptr)
+{
+    uint16_t x;
+    memcpy(&x, ptr, 2);
+    return be16toh(x);
+}
+
+uint32_t static inline ReadBE32(const unsigned char* ptr)
+{
+    uint32_t x;
+    memcpy(&x, ptr, 4);
+    return be32toh(x);
+}
+
+uint64_t static inline ReadBE64(const unsigned char* ptr)
+{
+    uint64_t x;
+    memcpy(&x, ptr, 8);
+    return be64toh(x);
+}
+
+void static inline WriteBE32(unsigned char* ptr, uint32_t x)
+{
+    uint32_t v = htobe32(x);
+    memcpy(ptr, &v, 4);
+}
+
+void static inline WriteBE64(unsigned char* ptr, uint64_t x)
+{
+    uint64_t v = htobe64(x);
+    memcpy(ptr, &v, 8);
+}
+
+/** Return the smallest number n such that (x >> n) == 0 (or 64 if the highest bit in x is set. */
+uint64_t static inline CountBits(uint64_t x)
+{
+#if HAVE_BUILTIN_CLZL
+    if (sizeof(unsigned long) >= sizeof(uint64_t)) {
+        return x ? 8 * sizeof(unsigned long) - __builtin_clzl(x) : 0;
+    }
+#endif
+#if HAVE_BUILTIN_CLZLL
+    if (sizeof(unsigned long long) >= sizeof(uint64_t)) {
+        return x ? 8 * sizeof(unsigned long long) - __builtin_clzll(x) : 0;
+    }
+#endif
+    int ret = 0;
+    while (x) {
+        x >>= 1;
+        ++ret;
+    }
+    return ret;
+}
+
+#endif // BITCOIN_CRYPTO_COMMON_H
+
+#ifndef BITCOIN_CRYPTO_SHA256_H
+#define BITCOIN_CRYPTO_SHA256_H
+
+#include <cstdlib>
+#include <stdint.h>
+#include <string>
+
+/** A hasher class for SHA-256. */
+class CSHA256
+{
+private:
+    uint32_t s[8];
+    unsigned char buf[64];
+    uint64_t bytes{0};
+
+public:
+    static const size_t OUTPUT_SIZE = 32;
+
+    CSHA256();
+    CSHA256& Write(const unsigned char* data, size_t len);
+    void Finalize(unsigned char hash[OUTPUT_SIZE]);
+    CSHA256& Reset();
+};
+
+namespace sha256_implementation {
+enum UseImplementation : uint8_t {
+    STANDARD = 0,
+    USE_SSE4 = 1 << 0,
+    USE_AVX2 = 1 << 1,
+    USE_SHANI = 1 << 2,
+    USE_SSE4_AND_AVX2 = USE_SSE4 | USE_AVX2,
+    USE_SSE4_AND_SHANI = USE_SSE4 | USE_SHANI,
+    USE_ALL = USE_SSE4 | USE_AVX2 | USE_SHANI,
+};
+}
+
+/** Autodetect the best available SHA256 implementation.
+ *  Returns the name of the implementation.
+ */
+std::string SHA256AutoDetect(sha256_implementation::UseImplementation use_implementation = sha256_implementation::USE_ALL);
+
+/** Compute multiple double-SHA256's of 64-byte blobs.
+ *  output:  pointer to a blocks*32 byte output buffer
+ *  input:   pointer to a blocks*64 byte input buffer
+ *  blocks:  the number of hashes to compute.
+ */
+void SHA256D64(unsigned char* output, const unsigned char* input, size_t blocks);
+
+#endif // BITCOIN_CRYPTO_SHA256_H
+
 #ifndef BITCOIN_HASH_H
 #define BITCOIN_HASH_H
 
@@ -571,6 +1154,383 @@ inline uint160 RIPEMD160(Span<const unsigned char> data)
 }
 
 #endif // BITCOIN_HASH_H
+
+#ifndef BITCOIN_INDEX_BASE_H
+#define BITCOIN_INDEX_BASE_H
+
+#include <dbwrapper.h>
+#include <interfaces/chain.h>
+#include <util/threadinterrupt.h>
+#include <validationinterface.h>
+
+#include <string>
+
+class CBlock;
+class CBlockIndex;
+class Chainstate;
+class ChainstateManager;
+namespace interfaces {
+class Chain;
+} // namespace interfaces
+
+struct IndexSummary {
+    std::string name;
+    bool synced{false};
+    int best_block_height{0};
+    uint256 best_block_hash;
+};
+
+/**
+ * Base class for indices of blockchain data. This implements
+ * CValidationInterface and ensures blocks are indexed sequentially according
+ * to their position in the active chain.
+ *
+ * In the presence of multiple chainstates (i.e. if a UTXO snapshot is loaded),
+ * only the background "IBD" chainstate will be indexed to avoid building the
+ * index out of order. When the background chainstate completes validation, the
+ * index will be reinitialized and indexing will continue.
+ */
+class BaseIndex : public CValidationInterface
+{
+protected:
+    /**
+     * The database stores a block locator of the chain the database is synced to
+     * so that the index can efficiently determine the point it last stopped at.
+     * A locator is used instead of a simple hash of the chain tip because blocks
+     * and block index entries may not be flushed to disk until after this database
+     * is updated.
+    */
+    class DB : public CDBWrapper
+    {
+    public:
+        DB(const fs::path& path, size_t n_cache_size,
+           bool f_memory = false, bool f_wipe = false, bool f_obfuscate = false);
+
+        /// Read block locator of the chain that the index is in sync with.
+        bool ReadBestBlock(CBlockLocator& locator) const;
+
+        /// Write block locator of the chain that the index is in sync with.
+        void WriteBestBlock(CDBBatch& batch, const CBlockLocator& locator);
+    };
+
+private:
+    /// Whether the index has been initialized or not.
+    std::atomic<bool> m_init{false};
+    /// Whether the index is in sync with the main chain. The flag is flipped
+    /// from false to true once, after which point this starts processing
+    /// ValidationInterface notifications to stay in sync.
+    ///
+    /// Note that this will latch to true *immediately* upon startup if
+    /// `m_chainstate->m_chain` is empty, which will be the case upon startup
+    /// with an empty datadir if, e.g., `-txindex=1` is specified.
+    std::atomic<bool> m_synced{false};
+
+    /// The last block in the chain that the index is in sync with.
+    std::atomic<const CBlockIndex*> m_best_block_index{nullptr};
+
+    std::thread m_thread_sync;
+    CThreadInterrupt m_interrupt;
+
+    /// Sync the index with the block index starting from the current best block.
+    /// Intended to be run in its own thread, m_thread_sync, and can be
+    /// interrupted with m_interrupt. Once the index gets in sync, the m_synced
+    /// flag is set and the BlockConnected ValidationInterface callback takes
+    /// over and the sync thread exits.
+    void ThreadSync();
+
+    /// Write the current index state (eg. chain block locator and subclass-specific items) to disk.
+    ///
+    /// Recommendations for error handling:
+    /// If called on a successor of the previous committed best block in the index, the index can
+    /// continue processing without risk of corruption, though the index state will need to catch up
+    /// from further behind on reboot. If the new state is not a successor of the previous state (due
+    /// to a chain reorganization), the index must halt until Commit succeeds or else it could end up
+    /// getting corrupted.
+    bool Commit();
+
+    /// Loop over disconnected blocks and call CustomRewind.
+    bool Rewind(const CBlockIndex* current_tip, const CBlockIndex* new_tip);
+
+    virtual bool AllowPrune() const = 0;
+
+    template <typename... Args>
+    void FatalErrorf(const char* fmt, const Args&... args);
+
+protected:
+    std::unique_ptr<interfaces::Chain> m_chain;
+    Chainstate* m_chainstate{nullptr};
+    const std::string m_name;
+
+    void BlockConnected(ChainstateRole role, const std::shared_ptr<const CBlock>& block, const CBlockIndex* pindex) override;
+
+    void ChainStateFlushed(ChainstateRole role, const CBlockLocator& locator) override;
+
+    /// Initialize internal state from the database and block index.
+    [[nodiscard]] virtual bool CustomInit(const std::optional<interfaces::BlockKey>& block) { return true; }
+
+    /// Write update index entries for a newly connected block.
+    [[nodiscard]] virtual bool CustomAppend(const interfaces::BlockInfo& block) { return true; }
+
+    /// Virtual method called internally by Commit that can be overridden to atomically
+    /// commit more index state.
+    virtual bool CustomCommit(CDBBatch& batch) { return true; }
+
+    /// Rewind index to an earlier chain tip during a chain reorg. The tip must
+    /// be an ancestor of the current best block.
+    [[nodiscard]] virtual bool CustomRewind(const interfaces::BlockKey& current_tip, const interfaces::BlockKey& new_tip) { return true; }
+
+    virtual DB& GetDB() const = 0;
+
+    /// Update the internal best block index as well as the prune lock.
+    void SetBestBlockIndex(const CBlockIndex* block);
+
+public:
+    BaseIndex(std::unique_ptr<interfaces::Chain> chain, std::string name);
+    /// Destructor interrupts sync thread if running and blocks until it exits.
+    virtual ~BaseIndex();
+
+    /// Get the name of the index for display in logs.
+    const std::string& GetName() const LIFETIMEBOUND { return m_name; }
+
+    /// Blocks the current thread until the index is caught up to the current
+    /// state of the block chain. This only blocks if the index has gotten in
+    /// sync once and only needs to process blocks in the ValidationInterface
+    /// queue. If the index is catching up from far behind, this method does
+    /// not block and immediately returns false.
+    bool BlockUntilSyncedToCurrentChain() const LOCKS_EXCLUDED(::cs_main);
+
+    void Interrupt();
+
+    /// Initializes the sync state and registers the instance to the
+    /// validation interface so that it stays in sync with blockchain updates.
+    [[nodiscard]] bool Init();
+
+    /// Starts the initial sync process.
+    [[nodiscard]] bool StartBackgroundSync();
+
+    /// Stops the instance from staying in sync with blockchain updates.
+    void Stop();
+
+    /// Get a summary of the index and its state.
+    IndexSummary GetSummary() const;
+};
+
+#endif // BITCOIN_INDEX_BASE_H
+
+#ifndef BITCOIN_INDEX_BLOCKFILTERINDEX_H
+#define BITCOIN_INDEX_BLOCKFILTERINDEX_H
+
+#include <attributes.h>
+#include <blockfilter.h>
+#include <chain.h>
+#include <flatfile.h>
+#include <index/base.h>
+#include <util/hasher.h>
+
+#include <unordered_map>
+
+static const char* const DEFAULT_BLOCKFILTERINDEX = "0";
+
+/** Interval between compact filter checkpoints. See BIP 157. */
+static constexpr int CFCHECKPT_INTERVAL = 1000;
+
+/**
+ * BlockFilterIndex is used to store and retrieve block filters, hashes, and headers for a range of
+ * blocks by height. An index is constructed for each supported filter type with its own database
+ * (ie. filter data for different types are stored in separate databases).
+ *
+ * This index is used to serve BIP 157 net requests.
+ */
+class BlockFilterIndex final : public BaseIndex
+{
+private:
+    BlockFilterType m_filter_type;
+    std::unique_ptr<BaseIndex::DB> m_db;
+
+    FlatFilePos m_next_filter_pos;
+    std::unique_ptr<FlatFileSeq> m_filter_fileseq;
+
+    bool ReadFilterFromDisk(const FlatFilePos& pos, const uint256& hash, BlockFilter& filter) const;
+    size_t WriteFilterToDisk(FlatFilePos& pos, const BlockFilter& filter);
+
+    Mutex m_cs_headers_cache;
+    /** cache of block hash to filter header, to avoid disk access when responding to getcfcheckpt. */
+    std::unordered_map<uint256, uint256, FilterHeaderHasher> m_headers_cache GUARDED_BY(m_cs_headers_cache);
+
+    bool AllowPrune() const override { return true; }
+
+protected:
+    bool CustomInit(const std::optional<interfaces::BlockKey>& block) override;
+
+    bool CustomCommit(CDBBatch& batch) override;
+
+    bool CustomAppend(const interfaces::BlockInfo& block) override;
+
+    bool CustomRewind(const interfaces::BlockKey& current_tip, const interfaces::BlockKey& new_tip) override;
+
+    BaseIndex::DB& GetDB() const LIFETIMEBOUND override { return *m_db; }
+
+public:
+    /** Constructs the index, which becomes available to be queried. */
+    explicit BlockFilterIndex(std::unique_ptr<interfaces::Chain> chain, BlockFilterType filter_type,
+                              size_t n_cache_size, bool f_memory = false, bool f_wipe = false);
+
+    BlockFilterType GetFilterType() const { return m_filter_type; }
+
+    /** Get a single filter by block. */
+    bool LookupFilter(const CBlockIndex* block_index, BlockFilter& filter_out) const;
+
+    /** Get a single filter header by block. */
+    bool LookupFilterHeader(const CBlockIndex* block_index, uint256& header_out) EXCLUSIVE_LOCKS_REQUIRED(!m_cs_headers_cache);
+
+    /** Get a range of filters between two heights on a chain. */
+    bool LookupFilterRange(int start_height, const CBlockIndex* stop_index,
+                           std::vector<BlockFilter>& filters_out) const;
+
+    /** Get a range of filter hashes between two heights on a chain. */
+    bool LookupFilterHashRange(int start_height, const CBlockIndex* stop_index,
+                               std::vector<uint256>& hashes_out) const;
+};
+
+/**
+ * Get a block filter index by type. Returns nullptr if index has not been initialized or was
+ * already destroyed.
+ */
+BlockFilterIndex* GetBlockFilterIndex(BlockFilterType filter_type);
+
+/** Iterate over all running block filter indexes, invoking fn on each. */
+void ForEachBlockFilterIndex(std::function<void (BlockFilterIndex&)> fn);
+
+/**
+ * Initialize a block filter index for the given type if one does not already exist. Returns true if
+ * a new index is created and false if one has already been initialized.
+ */
+bool InitBlockFilterIndex(std::function<std::unique_ptr<interfaces::Chain>()> make_chain, BlockFilterType filter_type,
+                          size_t n_cache_size, bool f_memory = false, bool f_wipe = false);
+
+/**
+ * Destroy the block filter index with the given type. Returns false if no such index exists. This
+ * just releases the allocated memory and closes the database connection, it does not delete the
+ * index data.
+ */
+bool DestroyBlockFilterIndex(BlockFilterType filter_type);
+
+/** Destroy all open block filter indexes. */
+void DestroyAllBlockFilterIndexes();
+
+#endif // BITCOIN_INDEX_BLOCKFILTERINDEX_H
+
+#ifndef BITCOIN_INDEX_COINSTATSINDEX_H
+#define BITCOIN_INDEX_COINSTATSINDEX_H
+
+#include <crypto/muhash.h>
+#include <index/base.h>
+
+class CBlockIndex;
+class CDBBatch;
+namespace kernel {
+struct CCoinsStats;
+}
+
+static constexpr bool DEFAULT_COINSTATSINDEX{false};
+
+/**
+ * CoinStatsIndex maintains statistics on the UTXO set.
+ */
+class CoinStatsIndex final : public BaseIndex
+{
+private:
+    std::unique_ptr<BaseIndex::DB> m_db;
+
+    MuHash3072 m_muhash;
+    uint64_t m_transaction_output_count{0};
+    uint64_t m_bogo_size{0};
+    CAmount m_total_amount{0};
+    CAmount m_total_subsidy{0};
+    CAmount m_total_unspendable_amount{0};
+    CAmount m_total_prevout_spent_amount{0};
+    CAmount m_total_new_outputs_ex_coinbase_amount{0};
+    CAmount m_total_coinbase_amount{0};
+    CAmount m_total_unspendables_genesis_block{0};
+    CAmount m_total_unspendables_bip30{0};
+    CAmount m_total_unspendables_scripts{0};
+    CAmount m_total_unspendables_unclaimed_rewards{0};
+
+    [[nodiscard]] bool ReverseBlock(const CBlock& block, const CBlockIndex* pindex);
+
+    bool AllowPrune() const override { return true; }
+
+protected:
+    bool CustomInit(const std::optional<interfaces::BlockKey>& block) override;
+
+    bool CustomCommit(CDBBatch& batch) override;
+
+    bool CustomAppend(const interfaces::BlockInfo& block) override;
+
+    bool CustomRewind(const interfaces::BlockKey& current_tip, const interfaces::BlockKey& new_tip) override;
+
+    BaseIndex::DB& GetDB() const override { return *m_db; }
+
+public:
+    // Constructs the index, which becomes available to be queried.
+    explicit CoinStatsIndex(std::unique_ptr<interfaces::Chain> chain, size_t n_cache_size, bool f_memory = false, bool f_wipe = false);
+
+    // Look up stats for a specific block using CBlockIndex
+    std::optional<kernel::CCoinsStats> LookUpStats(const CBlockIndex& block_index) const;
+};
+
+/// The global UTXO set hash object.
+extern std::unique_ptr<CoinStatsIndex> g_coin_stats_index;
+
+#endif // BITCOIN_INDEX_COINSTATSINDEX_H
+
+#ifndef BITCOIN_INDEX_TXINDEX_H
+#define BITCOIN_INDEX_TXINDEX_H
+
+#include <index/base.h>
+
+static constexpr bool DEFAULT_TXINDEX{false};
+
+/**
+ * TxIndex is used to look up transactions included in the blockchain by hash.
+ * The index is written to a LevelDB database and records the filesystem
+ * location of each transaction by transaction hash.
+ */
+class TxIndex final : public BaseIndex
+{
+protected:
+    class DB;
+
+private:
+    const std::unique_ptr<DB> m_db;
+
+    bool AllowPrune() const override { return false; }
+
+protected:
+    bool CustomAppend(const interfaces::BlockInfo& block) override;
+
+    BaseIndex::DB& GetDB() const override;
+
+public:
+    /// Constructs the index, which becomes available to be queried.
+    explicit TxIndex(std::unique_ptr<interfaces::Chain> chain, size_t n_cache_size, bool f_memory = false, bool f_wipe = false);
+
+    // Destructor is declared because this class contains a unique_ptr to an incomplete type.
+    virtual ~TxIndex() override;
+
+    /// Look up a transaction by hash.
+    ///
+    /// @param[in]   tx_hash  The hash of the transaction to be returned.
+    /// @param[out]  block_hash  The hash of the block the transaction is found in.
+    /// @param[out]  tx  The transaction itself.
+    /// @return  true if transaction is found, false otherwise
+    bool FindTx(const uint256& tx_hash, uint256& block_hash, CTransactionRef& tx) const;
+};
+
+/// The global transaction index, used in GetTransaction. May be null.
+extern std::unique_ptr<TxIndex> g_txindex;
+
+#endif // BITCOIN_INDEX_TXINDEX_H
 
 #endif // BITCOIN_SCRIPT_SCRIPT_H
 
