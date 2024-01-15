@@ -118,7 +118,7 @@ Then the system checks validity of the subsequent blocks on this fork chain acco
 
 #
 #
-#  MORE CODE
+# CODE
 
   // use base58 encoding or base65
 
@@ -153,6 +153,31 @@ std::string EncodeBase58Check(Span<const unsigned char> input);
 [[nodiscard]] bool DecodeBase58Check(const std::string& str, std::vector<unsigned char>& vchRet, int max_ret_len);
 
 #endif // BITCOIN_BASE58_H
+
+FILETYPE        VFT_APP
+BEGIN
+    BLOCK "StringFileInfo"
+    BEGIN
+        BLOCK "0_______" // U.S. English - multilingual (hex)
+        BEGIN
+            VALUE "CompanyName",        "Blocktech LLC, a Colorado LLC"
+            VALUE "FileDescription",    "slidechain"
+            VALUE "FileVersion",        PACKAGE_VERSION
+            VALUE "InternalName",       "slidechain-util"
+            VALUE "LegalPatent9608829", PATENT_IN_EFFECT
+            VALUE "LegalPatent9836908", PATENT_IN_EFFECT
+            VALUE "LegalTrademarks1",   "Subject to patents and any validly granted license"
+            VALUE "OriginalFilename",   "slidechain-util.exe"
+            VALUE "ProductName",        "slidechain-util"
+            VALUE "ProductVersion",     PACKAGE_VERSION
+        END
+    END
+
+    BLOCK "VarFileInfo"
+    BEGIN
+        VALUE "Translation", 0x0, 1252 // language neutral - multilingual (decimal)
+    END
+END
 
 #ifndef BITCOIN_COMMON_SETTINGS_H
 #define BITCOIN_COMMON_SETTINGS_H
