@@ -1,9 +1,34 @@
+// Define the structure of a block header in the blockchain.
 struct BlockHeader {
-    previousBlockHash: Hash,
-    merkleRoot: Hash,
-    timestamp: Integer,
-    difficultyTarget: Integer,
-    nonce: Integer,
-    authorizedHashes: Array<Hash>, // For storing hashes of forked chains
-    forkFlag: Boolean // Indicates if the block is a fork block
+    // Hash of the previous block in the chain.
+    previous_block_hash: String,
+    // Merkle root hash of the transactions in the block.
+    merkle_root: String,
+    // Timestamp when the block was created.
+    timestamp: u64,
+    // Target difficulty for the block's proof-of-work algorithm.
+    difficulty_target: u32,
+    // Nonce used for the block's proof-of-work algorithm.
+    nonce: u64,
+    // List of authorized hashes for forked chains.
+    authorized_hashes: Vec<String>,
+    // Flag to indicate if this block is the beginning of a fork.
+    fork_flag: bool,
 }
+
+// Implementing a constructor for BlockHeader.
+impl BlockHeader {
+    fn new() -> BlockHeader {
+        BlockHeader {
+            previous_block_hash: String::new(),
+            merkle_root: String::new(),
+            timestamp: 0,
+            difficulty_target: 0,
+            nonce: 0,
+            authorized_hashes: Vec::new(),
+            fork_flag: false,
+        }
+    }
+}
+
+
