@@ -1,0 +1,9 @@
+struct BlockHeader {
+    previousBlockHash: Hash,
+    merkleRoot: Hash,
+    timestamp: Integer,
+    difficultyTarget: Integer,
+    nonce: Integer,
+    authorizedHashes: Array<Hash>, // For storing hashes of forked chains
+    forkFlag: Boolean // Indicates if the block is a fork block
+}
