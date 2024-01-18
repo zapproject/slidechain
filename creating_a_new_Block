@@ -1,32 +1,30 @@
-function createBlock(previousBlock, transactions, forkData = null) {
-    var newBlock = new BlockHeader {
-        previousBlockHash = getHash(previousBlock),
-        merkleRoot = calculateMerkleRoot(transactions),
-        timestamp = getCurrentTimestamp(),
-        difficultyTarget = calculateDifficultyTarget(),
-        nonce = findNonce(),
-        authorizedHashes = [],
-        forkFlag = false
+// Function to create a new block.
+fn create_block(previous_block: &BlockHeader, transactions: &Vec<Transaction>, fork_data: Option<ForkData>) -> BlockHeader {
+    // Initialize a new block with default values.
+    let mut new_block = BlockHeader::new();
+    // Set the hash of the previous block.
+    new_block.previous_block_hash = get_hash(previous_block);
+    // Calculate and set the Merkle root hash.
+    new_block.merkle_root = calculate_merkle_root(transactions);
+    // Set the current timestamp.
+    new_block.timestamp = get_current_timestamp();
+    // Calculate and set the difficulty target.
+    new_block.difficulty_target = calculate_difficulty_target();
+    // Find and set the nonce.
+    new_block.nonce = find_nonce();
+
+    // Check if there's fork data to set the fork-specific fields.
+    if let Some(fd) = fork_data {
+        new_block.authorized_hashes = fd.authorized_hashes;
+        new_block.fork_flag = true;
     }
 
-    // If the block is a fork block
-    if (forkData) {
-        newBlock.authorizedHashes = forkData.authorizedHashes
-        newBlock.forkFlag = true
-    }
-
-    // Add additional logic as required for block creation
-    return newBlock
+    new_block
 }
 
-function findNonce() {
-    // Implement nonce finding logic here (e.g., proof-of-work)
-}
-
-function calculateMerkleRoot(transactions) {
-    // Implement Merkle root calculation based on transactions
-}
-
-function calculateDifficultyTarget() {
-    // Implement logic to calculate the difficulty target
-}
+// Functions to be defined based on your blockchain's specific logic
+fn get_hash(block: &BlockHeader) -> String { /* ... */ }
+fn calculate_merkle_root(transactions: &Vec<Transaction>) -> String { /* ... */ }
+fn get_current_timestamp() -> u64 { /* ... */ }
+fn calculate_difficulty_target() -> u32 { /* ... */ }
+fn find_nonce() -> u64 { /* ... */ }
