@@ -1,3 +1,5 @@
+
+
 // Function to create a new block.
 fn create_block(previous_block: &BlockHeader, transactions: &Vec<Transaction>, fork_data: Option<ForkData>) -> BlockHeader {
     // Initialize a new block with default values.
@@ -21,6 +23,10 @@ fn create_block(previous_block: &BlockHeader, transactions: &Vec<Transaction>, f
 
     new_block
 }
+
+// This is IF the new_block allows for forking
+// Such new_block would be a "fork block"
+// Otherwise just "regular" block (non-forkable)
 
 // Functions to be defined based on your blockchain's specific logic
 fn get_hash(block: &BlockHeader) -> String { /* ... */ }
