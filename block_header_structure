@@ -31,4 +31,20 @@ impl BlockHeader {
     }
 }
 
+//  Blockheader in root block with specified empty fields is authorized hash
+//  Authorized hash and activated fork flag enables new block to be fork block
 
+// Implementing a constructor for Root_Block_BlockHeader.
+impl Root_Block_BlockHeader {
+    fn new() -> Root_Block_BlockHeader {
+        Root_Block_BlockHeader {
+            previous_block_hash: String::new(),
+            merkle_root: String::new(),
+            timestamp: 0,
+            difficulty_target: 0,
+            nonce: 0,
+            authorized_hash_1: Vec::new(),
+            fork_flag_1: true,
+
+then authorized hash for first desired fork_chain_1 is created
+//  Authorized hash becomes payload for authorized hash field in fork_block in fork_chain_1
