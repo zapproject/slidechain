@@ -14,19 +14,39 @@ fn create_block(previous_block: &BlockHeader, transactions: &Vec<Transaction>, f
     new_block.difficulty_target = calculate_difficulty_target();
     // Find and set the nonce.
     new_block.nonce = find_nonce();
+        
+
 
     // Check if there's fork data to set the fork-specific fields.
     if let Some(fd) = fork_data {
         new_block.authorized_hashes = fd.authorized_hashes;
         new_block.fork_flag = true;
+        new_block.nonce = ()
     }
 
     new_block
 }
 
-// This is IF the new_block allows for forking
+//    All blocks can fork if fork_flag = true 
+//    This is IF new_block enabled for forking if fork_flag = true
+//     Both conditions must be met for allowance
+
+//     Condition one
+
+    new_block.fork_flag = true
+    new_block.fork_flag[n]
+    new_block.fork_flag[n+1]
+        where n>0
+
+and
+
+//    Condition two
+
+    new_block.nonce = ()
+
 // Such new_block would be a "fork block"
-// Otherwise just "regular" block (non-forkable)
+// First fork block starts forked chain (the "fork")
+// Otherwise just "regular" block 
 
 // Functions to be defined based on your blockchain's specific logic
 fn get_hash(block: &BlockHeader) -> String { /* ... */ }
