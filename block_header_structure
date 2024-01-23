@@ -57,3 +57,11 @@ uint256 signet temporary_fork_block_authorized_hash = TemporaryRootBlockHeader
 std::vector<uint8_t> block_data;
     VectorWriter writer{block_data, 0};
     writer << block.nVersion;
+
+// Signet block solution checker
+bool CheckSignetBlockSolution(const CBlock& block, const Consensus::Params& consensusParams)
+{
+    if (block.GetHash() == consensusParams.hashGenesisBlock) {
+        // genesis block solution is always valid
+        return true;
+
