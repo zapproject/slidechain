@@ -65,3 +65,26 @@ bool CheckSignetBlockSolution(const CBlock& block, const Consensus::Params& cons
         // genesis block solution is always valid
         return true;
 
+// Signet fork block development
+bool CheckSignetBlockSolution(const CBlock& block, const Consensus::Params& consensusParams);
+
+/**
+ * Generate the signet tx corresponding to the given root block
+ * The root block block header constitutes the authorized hash going into the new fork block
+ * The signet tx commits to everything in the block except:
+ * 1. It hashes a modified merkle root with the signet signature removed.
+ * 2. It leaves the nonce unspecified.
+ * 3. It leaves the previous hash unspecified.
+ */
+class SignetTxs {
+    template<class T1, class T2>
+    SignetTxs(const T1& to_spend, const T2& to_sign) : m_to_spend{to_spend}, m_to_sign{to_sign} { }
+
+public:
+    static std::optional<SignetTxs> Create(const CBlock& block, const CScript& challenge);
+
+    const CTransaction m_to_spend;
+    const CTransaction m_to_sign;
+};
+
+#endif // BITCOIN_SIGNET_H
