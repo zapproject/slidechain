@@ -15,6 +15,13 @@ struct BlockHeader {
     // Flag to indicate if this block is the beginning of a fork.
     fork_flag: bool,
 }
+// Set timestamp for root blocks and fork blocks
+// Timestamps ensure root blocks always precede fork blocks in time
+def root block = root_block_1
+def timestamp = t[n] where n = 0
+// Timestamp when root_block_1 was created must precede timestamp for when fork_block_1 was created
+// Timestamp for root_block_1 = t[n]
+// Timestamp for fork_block_1 = t[n+1] where n > 0
 
 // Implementing a constructor for BlockHeader.
 impl BlockHeader {
