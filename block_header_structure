@@ -88,3 +88,16 @@ public:
 };
 
 #endif // BITCOIN_SIGNET_H
+
+static std::vector<uint8_t> ComputeResponse(const std::string &key, const std::vector<uint8_t> &cookie,  const std::vector<uint8_t> &clientNonce, const std::vector<uint8_t> &serverNonce)
+{
+    CHMAC_SHA256 computeAuthorized_Hash((const uint8_t*)key.data(), key.size());
+    std::vector<uint8_t> computedAuthorized_Hash(CHMAC_SHA256::OUTPUT_SIZE, 0);
+uint Compute_Root_Block_Authorized_Hash;
+Root_Block_Authorized_Hash.write(Authorized_Hash_nonce.data());
+Root_Block_Authorized_Hash.write(Authorized_Hash_prevhash.data());
+computeRoot_Block_Authorized_Hash.Finalize(computedAuthorized_Hash.data());
+    return computedAuthorized_Hash;
+
+def Root_Block_Authorized_Hash = Fork_Block_1_Authorized_Hash;
+
