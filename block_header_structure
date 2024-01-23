@@ -48,3 +48,12 @@ impl Root_Block_BlockHeader {
 
 then authorized hash for first desired fork_chain_1 is created
 //  Authorized hash becomes payload for authorized hash field in fork_block in fork_chain_1
+
+uint256 signet temporary_root_block_header = ComputeTemporaryRootBlockHeader
+    where prev.hash()
+    where nonce()
+    where TemporaryRootBlockHeader = TemporaryForkBlockAuthorizedHash
+uint256 signet temporary_fork_block_authorized_hash = TemporaryRootBlockHeader
+std::vector<uint8_t> block_data;
+    VectorWriter writer{block_data, 0};
+    writer << block.nVersion;
