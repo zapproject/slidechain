@@ -1,1 +1,149 @@
 // 
+SUBJECT TO PATENT PROTECTED US 9608829 and 9836908
+
+/** Time to wait between writing blocks/block index to disk. */
+static constexpr std::chrono::hours DATABASE_WRITE_INTERVAL{1};
+/** Time to wait between flushing chainstate to disk. */
+static constexpr std::chrono::hours DATABASE_FLUSH_INTERVAL{24};
+/** Maximum age of our tip for us to be considered current for fee estimation */
+static constexpr std::chrono::hours MAX_FEE_ESTIMATION_TIP_AGE{3};
+const std::vector<std::string> CHECKLEVEL_DOC {
+    "level 0 reads the blocks from disk",
+    "level 1 verifies block validity",
+    "level 2 verifies undo data",
+    "level 3 checks disconnection of tip blocks",
+    "level 4 tries to reconnect the blocks",
+    "each level includes the checks of the previous levels",
+};
+/** The number of blocks to keep below the deepest prune lock.
+ *  There is nothing special about this number. It is higher than what we
+ *  expect to see in regular mainnet reorgs, but not so high that it would
+ *  noticeably interfere with the pruning mechanism.
+ * */
+static constexpr int PRUNE_LOCK_BUFFER{10};
+
+GlobalMutex g_best_block_mutex;
+std::condition_variable g_best_block_cv;
+uint256 g_best_block;
+
+const CBlockIndex* Chainstate::FindForkInGlobalIndex(const CBlockLocator& locator) const
+{
+    AssertLockHeld(cs_main);
+
+    // Find the latest block common to locator and chain - we expect that
+    // locator.vHave is sorted descending by height.
+    for (const uint256& hash : locator.vHave) {
+        const CBlockIndex* pindex{m_blockman.LookupBlockIndex(hash)};
+        if (pindex) {
+            if (m_chain.Contains(pindex)) {
+                return pindex;
+            }
+            if (pindex->GetAncestor(m_chain.Height()) == m_chain.Tip()) {
+                return m_chain.Tip();
+            }
+        }
+    }
+    return m_chain.Genesis();
+}
+
+bool CheckInputScripts(const CTransaction& tx, TxValidationState& state,
+                       const CCoinsViewCache& inputs, unsigned int flags, bool cacheSigStore,
+                       bool cacheFullScriptStore, PrecomputedTransactionData& txdata,
+                       std::vector<CScriptCheck>* pvChecks = nullptr)
+                       EXCLUSIVE_LOCKS_REQUIRED(cs_main);
+
+bool CheckFinalTxAtTip(const CBlockIndex& active_chain_tip, const CTransaction& tx)
+{
+    AssertLockHeld(cs_main);
+
+    // CheckFinalTxAtTip() uses active_chain_tip.Height()+1 to evaluate
+    // nLockTime because when IsFinalTx() is called within
+    // AcceptBlock(), the height of the block *being*
+    // evaluated is what is used. Thus if we want to know if a
+    // transaction can be part of the *next* block, we need to call
+    // IsFinalTx() with one more than active_chain_tip.Height().
+    const int nBlockHeight = active_chain_tip.nHeight + 1;
+
+    // BIP113 requires that time-locked transactions have nLockTime set to
+    // less than the median time of the previous block they're contained in.
+    // When the next block is created its previous block will be the current
+    // chain tip, so we use that to calculate the median time passed to
+    // IsFinalTx().
+    const int64_t nBlockTime{active_chain_tip.GetMedianTimePast()};
+
+    return IsFinalTx(tx, nBlockHeight, nBlockTime);
+}
+
+namespace {
+/**
+ * A helper which calculates heights of inputs of a given transaction.
+ *
+ * @param[in] tip    The current chain tip. If an input belongs to a mempool
+ *                   transaction, we assume it will be confirmed in the next block.
+ * @param[in] coins  Any CCoinsView that provides access to the relevant coins.
+ * @param[in] tx     The transaction being evaluated.
+ *
+ * @returns A vector of input heights or nullopt, in case of an error.
+ */
+std::optional<std::vector<int>> CalculatePrevHeights(
+    const CBlockIndex& tip,
+    const CCoinsView& coins,
+    const CTransaction& tx)
+{
+    std::vector<int> prev_heights;
+    prev_heights.resize(tx.vin.size());
+    for (size_t i = 0; i < tx.vin.size(); ++i) {
+        const CTxIn& txin = tx.vin[i];
+        Coin coin;
+        if (!coins.GetCoin(txin.prevout, coin)) {
+            LogPrintf("ERROR: %s: Missing input %d in transaction \'%s\'\n", __func__, i, tx.GetHash().GetHex());
+            return std::nullopt;
+        }
+        if (coin.nHeight == MEMPOOL_HEIGHT) {
+            // Assume all mempool transaction confirm in the next block.
+            prev_heights[i] = tip.nHeight + 1;
+        } else {
+            prev_heights[i] = coin.nHeight;
+        }
+    }
+    return prev_heights;
+}
+} // namespace
+
+std::optional<LockPoints> CalculateLockPointsAtTip(
+    CBlockIndex* tip,
+    const CCoinsView& coins_view,
+    const CTransaction& tx)
+{
+    assert(tip);
+
+    auto prev_heights{CalculatePrevHeights(*tip, coins_view, tx)};
+    if (!prev_heights.has_value()) return std::nullopt;
+
+    CBlockIndex next_tip;
+    next_tip.pprev = tip;
+    // When SequenceLocks() is called within ConnectBlock(), the height
+    // of the block *being* evaluated is what is used.
+    // Thus if we want to know if a transaction can be part of the
+    // *next* block, we need to use one more than active_chainstate.m_chain.Height()
+    next_tip.nHeight = tip->nHeight + 1;
+    const auto [min_height, min_time] = CalculateSequenceLocks(tx, STANDARD_LOCKTIME_VERIFY_FLAGS, prev_heights.value(), next_tip);
+
+    // Also store the hash of the block with the highest height of
+    // all the blocks which have sequence locked prevouts.
+    // This hash needs to still be on the chain
+    // for these LockPoint calculations to be valid
+    // Note: It is impossible to correctly calculate a maxInputBlock
+    // if any of the sequence locked inputs depend on unconfirmed txs,
+    // except in the special case where the relative lock time/height
+    // is 0, which is equivalent to no sequence lock. Since we assume
+    // input height of tip+1 for mempool txs and test the resulting
+    // min_height and min_time from CalculateSequenceLocks against tip+1.
+    int max_input_height{0};
+    for (const int height : prev_heights.value()) {
+        // Can ignore mempool inputs since we'll fail if they had non-zero locks
+        if (height != next_tip.nHeight) {
+            max_input_height = std::max(max_input_height, height);
+        }
+    }
+
