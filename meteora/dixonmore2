@@ -1,5 +1,6 @@
 // 
 SUBJECT TO PATENT PROTECTED US 9608829 and 9836908
+NO LICENSE GRANTED. READ-ONLY. FOR DEVELOPMENT PURPOSES ONLY.
 
 /** Time to wait between writing blocks/block index to disk. */
 static constexpr std::chrono::hours DATABASE_WRITE_INTERVAL{1};
