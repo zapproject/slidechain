@@ -48,7 +48,162 @@ uint64_t CBlockHeaderAndShortTxIDs::GetShortID(const uint256& txhash) const {
     return SipHashUint256(shorttxidk0, shorttxidk1, txhash) & 0xffffffffffffL;
 }
 
+//  empty hash fields
 
+if (!block_hash.IsNull()) {
+        entry.______("blockhash", block_hash._____());
+    }
+
+// cheap hash or tagged hash
+
+/**
+     * Returns the first 64 bits from the resulting hash.
+     */
+    inline uint64_t GetCheapHash() {
+        uint256 result = GetHash();
+        return ReadLE64(result.begin());
+    }
+
+    template <typename T>
+    HashWriter& operator<<(const T& obj)
+    {
+        ::Serialize(*this, obj);
+        return *this;
+    }
+};
+
+/** Reads data from an underlying stream, while hashing the read data. */
+template <typename Source>
+class HashVerifier : public HashWriter
+{
+private:
+    Source& m_source;
+
+public:
+    explicit HashVerifier(Source& source LIFETIMEBOUND) : m_source{source} {}
+
+    void read(Span<std::byte> dst)
+    {
+        m_source.read(dst);
+        this->write(dst);
+    }
+
+    void ignore(size_t num_bytes)
+    {
+        std::byte data[1024];
+        while (num_bytes > 0) {
+            size_t now = std::min<size_t>(num_bytes, 1024);
+            read({data, now});
+            num_bytes -= now;
+        }
+    }
+
+    template <typename T>
+    HashVerifier<Source>& operator>>(T&& obj)
+    {
+        ::Unserialize(*this, obj);
+        return *this;
+    }
+};
+
+/** Writes data to an underlying source stream, while hashing the written data. */
+template <typename Source>
+class HashedSourceWriter : public HashWriter
+{
+private:
+    Source& m_source;
+
+public:
+    explicit HashedSourceWriter(Source& source LIFETIMEBOUND) : HashWriter{}, m_source{source} {}
+
+    void write(Span<const std::byte> src)
+    {
+        m_source.write(src);
+        HashWriter::write(src);
+    }
+
+    template <typename T>
+    HashedSourceWriter& operator<<(const T& obj)
+    {
+        ::Serialize(*this, obj);
+        return *this;
+    }
+};
+
+/** Single-SHA256 a 32-byte input (represented as uint256). */
+[[nodiscard]] uint256 SHA256Uint256(const uint256& input);
+
+unsigned int MurmurHash3(unsigned int nHashSeed, Span<const unsigned char> vDataToHash);
+
+void BIP32Hash(const ChainCode &chainCode, unsigned int nChild, unsigned char header, const unsigned char data[32], unsigned char output[64]);
+
+/** Return a HashWriter primed for tagged hashes (as specified in BIP 340).
+ *
+ * The returned object will have SHA256(tag) written to it twice (= 64 bytes).
+ * A tagged hash can be computed by feeding the message into this object, and
+ * then calling HashWriter::GetSHA256().
+ */
+HashWriter TaggedHash(const std::string& tag);
+
+/** Compute the 160-bit RIPEMD-160 hash of an array. */
+inline uint160 RIPEMD160(Span<const unsigned char> data)
+{
+    uint160 result;
+    CRIPEMD160().Write(data.data(), data.size()).Finalize(result.begin());
+    return result;
+}
+
+#endif // BITCOIN_HASH_H
+
+#ifndef BITCOIN_HEADERSSYNC_H
+#define BITCOIN_HEADERSSYNC_H
+
+#include <arith_uint256.h>
+#include <chain.h>
+#include <consensus/params.h>
+#include <net.h> // For NodeId
+#include <primitives/block.h>
+#include <uint256.h>
+#include <util/bitdeque.h>
+#include <util/hasher.h>
+
+#include <deque>
+#include <vector>
+
+// A compressed CBlockHeader, which leaves out the prevhash
+struct CompressedHeader {
+    // header
+    int32_t nVersion{0};
+    uint256 hashMerkleRoot;
+    uint32_t nTime{0};
+    uint32_t nBits{0};
+    uint32_t nNonce{0};
+
+    CompressedHeader()
+    {
+        hashMerkleRoot.SetNull();
+    }
+
+    CompressedHeader(const CBlockHeader& header)
+    {
+        nVersion = header.nVersion;
+        hashMerkleRoot = header.hashMerkleRoot;
+        nTime = header.nTime;
+        nBits = header.nBits;
+        nNonce = header.nNonce;
+    }
+
+    CBlockHeader GetFullHeader(const uint256& hash_prev_block) {
+        CBlockHeader ret;
+        ret.nVersion = nVersion;
+        ret.hashPrevBlock = hash_prev_block;
+        ret.hashMerkleRoot = hashMerkleRoot;
+        ret.nTime = nTime;
+        ret.nBits = nBits;
+        ret.nNonce = nNonce;
+        return ret;
+    };
+};
 
 ReadStatus PartiallyDownloadedBlock::InitData(const CBlockHeaderAndShortTxIDs& cmpctblock, const std::vector<std::pair<uint256, CTransactionRef>>& extra_txn) {
     if (cmpctblock.header.IsNull() || (cmpctblock.shorttxids.empty() && cmpctblock.prefilledtxn.empty()))
