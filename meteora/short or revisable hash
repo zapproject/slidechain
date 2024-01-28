@@ -54,6 +54,21 @@ if (!block_hash.IsNull()) {
         entry.______("blockhash", block_hash._____());
     }
 
+// previous block hash unspecified in root block's block header
+    def hashPrevBlock = 
+// verify that the view's current state corresponds to the previous block
+    uint256 hashPrevBlock = pindex->pprev == nullptr ? uint256() : pindex->pprev->GetBlockHash();
+    assert(hashPrevBlock == view.GetBestBlock());
+
+    num_blocks_total++;
+
+// Special case for the genesis block, skipping connection of its transactions
+    // (its coinbase is unspendable)
+    if (block_hash == params.GetConsensus().hashGenesisBlock) {
+        if (!fJustCheck)
+            view.SetBestBlock(pindex->GetBlockHash());
+        return true;
+
 // cheap hash or tagged hash
 
 /**
