@@ -1,0 +1,177 @@
+// all contents herein subject to Patent Protection under US9608829 and 9836908 
+// for research and development purposes only
+// ABSOLUTELY NO license granted herein.
+
+CBlockHeaderAndShortTxIDs::CBlockHeaderAndShortTxIDs(const CBlock& block) :
+        nonce(GetRand<uint64_t>()),
+        shorttxids(block.vtx.size() - 1), prefilledtxn(1), header(block) {
+    FillShortTxIDSelector();
+    //TODO: Use our mempool prior to block acceptance to predictively fill more than just the coinbase
+    prefilledtxn[0] = {0, block.vtx[0]};
+    for (size_t i = 1; i < block.vtx.size(); i++) {
+        const CTransaction& tx = *block.vtx[i];
+        shorttxids[i - 1] = GetShortID(tx.GetWitnessHash());
+    }
+}
+
+void CBlockHeaderAndShortTxIDs::FillShortTxIDSelector() const {
+    DataStream stream{};
+    stream << header << nonce;
+    CSHA256 hasher;
+    hasher.Write((unsigned char*)&(*stream.begin()), stream.end() - stream.begin());
+    uint256 shorttxidhash;
+    hasher.Finalize(shorttxidhash.begin());
+    shorttxidk0 = shorttxidhash.GetUint64(0);
+    shorttxidk1 = shorttxidhash.GetUint64(1);
+}
+
+uint256 CPartialMerkleTree::CalcHash(int height, unsigned int pos, const std::vector<uint256> &vTxid) {
+    //we can never have zero txs in a merkle block, we always need the coinbase tx
+    //if we do not have this assert, we can hit a memory access violation when indexing into vTxid
+    assert(vTxid.size() != 0);
+    if (height == 0) {
+        // hash at height 0 is the txids themselves
+        return vTxid[pos];
+    } else {
+        // calculate left hash
+        uint256 left = CalcHash(height-1, pos*2, vTxid), right;
+        // calculate right hash if not beyond the end of the array - copy left hash otherwise
+        if (pos*2+1 < CalcTreeWidth(height-1))
+            right = CalcHash(height-1, pos*2+1, vTxid);
+        else
+            right = left;
+        // combine subhashes
+        return Hash(left, right);
+    }
+}
+
+uint64_t CBlockHeaderAndShortTxIDs::GetShortID(const uint256& txhash) const {
+    static_assert(SHORTTXIDS_LENGTH == 6, "shorttxids calculation assumes 6-byte shorttxids");
+    return SipHashUint256(shorttxidk0, shorttxidk1, txhash) & 0xffffffffffffL;
+
+static int Grind(const std::vector<std::string>& args, std::string& strPrint)
+{
+    if (args.size() != 1) {
+        strPrint = "Must specify block header to grind";
+        return EXIT_FAILURE;
+    }
+
+    CBlockHeader header;
+    if (!DecodeHexBlockHeader(header, args[0])) {
+        strPrint = "Could not decode block header";
+        return EXIT_FAILURE;
+    }
+}
+
+//! block header
+    int32_t nVersion{0};
+    uint256 hashMerkleRoot{};
+    uint32_t nTime{0};
+    uint32_t nBits{0};
+    uint32_t nNonce{0};
+
+    //! (memory only) Sequential id assigned to distinguish order in which blocks are received.
+    int32_t nSequenceId{0};
+
+    //! (memory only) Maximum nTime in the chain up to and including this block.
+    unsigned int nTimeMax{0};
+
+    explicit CBlockIndex(const CBlockHeader& block)
+        : nVersion{block.nVersion},
+          hashMerkleRoot{block.hashMerkleRoot},
+          nTime{block.nTime},
+          nBits{block.nBits},
+          nNonce{block.nNonce}
+    {
+    }
+
+    CBlockHeader GetBlockHeader() const
+    {
+        CBlockHeader block;
+        block.nVersion = nVersion;
+        if (pprev)
+            block.hashPrevBlock = pprev->GetBlockHash();
+        block.hashMerkleRoot = hashMerkleRoot;
+        block.nTime = nTime;
+        block.nBits = nBits;
+        block.nNonce = nNonce;
+        return block;
+    }
+
+    uint256 GetBlockHash() const
+    {
+        assert(phashBlock != nullptr);
+        return *phashBlock;
+
+uint256 ConstructBlockHash() const
+    {
+        CBlockHeader block;
+        block.nVersion = nVersion;
+        block.hashPrevBlock = hashPrev;
+        block.hashMerkleRoot = hashMerkleRoot;
+        block.nTime = nTime;
+        block.nBits = nBits;
+        block.nNonce = nNonce;
+        return block.GetHash();
+    }
+
+    uint256 GetBlockHash() = delete;
+    std::string ToString() = delete;
+};
+
+#ifndef BITCOIN_HEADERSSYNC_H
+#define BITCOIN_HEADERSSYNC_H
+
+#include <arith_uint256.h>
+#include <chain.h>
+#include <consensus/params.h>
+#include <net.h> // For NodeId
+#include <primitives/block.h>
+#include <uint256.h>
+#include <util/bitdeque.h>
+#include <util/hasher.h>
+
+#include <deque>
+#include <vector>
+
+// A compressed CBlockHeader, which leaves out the prevhash
+struct CompressedHeader {
+    // header
+    int32_t nVersion{0};
+    uint256 hashMerkleRoot;
+    uint32_t nTime{0};
+    uint32_t nBits{0};
+    uint32_t nNonce{0};
+
+    CompressedHeader()
+    {
+        hashMerkleRoot.SetNull();
+    }
+
+    CompressedHeader(const CBlockHeader& header)
+    {
+        nVersion = header.nVersion;
+        hashMerkleRoot = header.hashMerkleRoot;
+        nTime = header.nTime;
+        nBits = header.nBits;
+        nNonce = header.nNonce;
+    }
+
+    CBlockHeader GetFullHeader(const uint256& hash_prev_block) {
+        CBlockHeader ret;
+        ret.nVersion = nVersion;
+        ret.hashPrevBlock = hash_prev_block;
+        ret.hashMerkleRoot = hashMerkleRoot;
+        ret.nTime = nTime;
+        ret.nBits = nBits;
+        ret.nNonce = nNonce;
+        return ret;
+    };
+};
+
+// Note that leaving out the previous hash and then leaving out the nonce
+// leaves the block header available for designation in the root block
+// as the necessary short hash
+// that goes into the subsequent fork block 
+
+    
