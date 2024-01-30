@@ -1,0 +1,1345 @@
+// Reference made to U.S. Patents 9608829 and 9836908
+// No license granted or created herein
+// No license except pursuant to valid license agreement w/ licenseholder
+// Use here only for development purposes
+
+// Block payload protocols
+// Instructions
+
+#ifndef BITCOIN_INDEX_BASE_H
+#define BITCOIN_INDEX_BASE_H
+
+#include <dbwrapper.h>
+#include <interfaces/chain.h>
+#include <util/threadinterrupt.h>
+#include <validationinterface.h>
+
+#include <string>
+
+class CBlock;
+class CBlockIndex;
+class Chainstate;
+class ChainstateManager;
+namespace interfaces {
+class Chain;
+} // namespace interfaces
+
+struct IndexSummary {
+    std::string name;
+    bool synced{false};
+    int best_block_height{0};
+    uint256 best_block_hash;
+};
+
+/**
+ * Base class for indices of blockchain data. This implements
+ * CValidationInterface and ensures blocks are indexed sequentially according
+ * to their position in the active chain.
+ *
+ * In the presence of multiple chainstates (i.e. if a UTXO snapshot is loaded),
+ * only the background "IBD" chainstate will be indexed to avoid building the
+ * index out of order. When the background chainstate completes validation, the
+ * index will be reinitialized and indexing will continue.
+ */
+class BaseIndex : public CValidationInterface
+{
+protected:
+    /**
+     * The database stores a block locator of the chain the database is synced to
+     * so that the index can efficiently determine the point it last stopped at.
+     * A locator is used instead of a simple hash of the chain tip because blocks
+     * and block index entries may not be flushed to disk until after this database
+     * is updated.
+    */
+    class DB : public CDBWrapper
+    {
+    public:
+        DB(const fs::path& path, size_t n_cache_size,
+           bool f_memory = false, bool f_wipe = false, bool f_obfuscate = false);
+
+        /// Read block locator of the chain that the index is in sync with.
+        bool ReadBestBlock(CBlockLocator& locator) const;
+
+        /// Write block locator of the chain that the index is in sync with.
+        void WriteBestBlock(CDBBatch& batch, const CBlockLocator& locator);
+    };
+
+private:
+    /// Whether the index has been initialized or not.
+    std::atomic<bool> m_init{false};
+    /// Whether the index is in sync with the main chain. The flag is flipped
+    /// from false to true once, after which point this starts processing
+    /// ValidationInterface notifications to stay in sync.
+    ///
+    /// Note that this will latch to true *immediately* upon startup if
+    /// `m_chainstate->m_chain` is empty, which will be the case upon startup
+    /// with an empty datadir if, e.g., `-txindex=1` is specified.
+    std::atomic<bool> m_synced{false};
+
+    /// The last block in the chain that the index is in sync with.
+    std::atomic<const CBlockIndex*> m_best_block_index{nullptr};
+
+    std::thread m_thread_sync;
+    CThreadInterrupt m_interrupt;
+
+    /// Sync the index with the block index starting from the current best block.
+    /// Intended to be run in its own thread, m_thread_sync, and can be
+    /// interrupted with m_interrupt. Once the index gets in sync, the m_synced
+    /// flag is set and the BlockConnected ValidationInterface callback takes
+    /// over and the sync thread exits.
+    void ThreadSync();
+
+    /// Write the current index state (eg. chain block locator and subclass-specific items) to disk.
+    ///
+    /// Recommendations for error handling:
+    /// If called on a successor of the previous committed best block in the index, the index can
+    /// continue processing without risk of corruption, though the index state will need to catch up
+    /// from further behind on reboot. If the new state is not a successor of the previous state (due
+    /// to a chain reorganization), the index must halt until Commit succeeds or else it could end up
+    /// getting corrupted.
+    bool Commit();
+
+    /// Loop over disconnected blocks and call CustomRewind.
+    bool Rewind(const CBlockIndex* current_tip, const CBlockIndex* new_tip);
+
+    virtual bool AllowPrune() const = 0;
+
+    template <typename... Args>
+    void FatalErrorf(const char* fmt, const Args&... args);
+
+protected:
+    std::unique_ptr<interfaces::Chain> m_chain;
+    Chainstate* m_chainstate{nullptr};
+    const std::string m_name;
+
+    void BlockConnected(ChainstateRole role, const std::shared_ptr<const CBlock>& block, const CBlockIndex* pindex) override;
+
+    void ChainStateFlushed(ChainstateRole role, const CBlockLocator& locator) override;
+
+    /// Initialize internal state from the database and block index.
+    [[nodiscard]] virtual bool CustomInit(const std::optional<interfaces::BlockKey>& block) { return true; }
+
+    /// Write update index entries for a newly connected block.
+    [[nodiscard]] virtual bool CustomAppend(const interfaces::BlockInfo& block) { return true; }
+
+    /// Virtual method called internally by Commit that can be overridden to atomically
+    /// commit more index state.
+    virtual bool CustomCommit(CDBBatch& batch) { return true; }
+
+    /// Rewind index to an earlier chain tip during a chain reorg. The tip must
+    /// be an ancestor of the current best block.
+    [[nodiscard]] virtual bool CustomRewind(const interfaces::BlockKey& current_tip, const interfaces::BlockKey& new_tip) { return true; }
+
+    virtual DB& GetDB() const = 0;
+
+    /// Update the internal best block index as well as the prune lock.
+    void SetBestBlockIndex(const CBlockIndex* block);
+
+public:
+    BaseIndex(std::unique_ptr<interfaces::Chain> chain, std::string name);
+    /// Destructor interrupts sync thread if running and blocks until it exits.
+    virtual ~BaseIndex();
+
+    /// Get the name of the index for display in logs.
+    const std::string& GetName() const LIFETIMEBOUND { return m_name; }
+
+    /// Blocks the current thread until the index is caught up to the current
+    /// state of the block chain. This only blocks if the index has gotten in
+    /// sync once and only needs to process blocks in the ValidationInterface
+    /// queue. If the index is catching up from far behind, this method does
+    /// not block and immediately returns false.
+    bool BlockUntilSyncedToCurrentChain() const LOCKS_EXCLUDED(::cs_main);
+
+    void Interrupt();
+
+    /// Initializes the sync state and registers the instance to the
+    /// validation interface so that it stays in sync with blockchain updates.
+    [[nodiscard]] bool Init();
+
+    /// Starts the initial sync process.
+    [[nodiscard]] bool StartBackgroundSync();
+
+    /// Stops the instance from staying in sync with blockchain updates.
+    void Stop();
+
+    /// Get a summary of the index and its state.
+    IndexSummary GetSummary() const;
+};
+
+#endif // BITCOIN_INDEX_BASE_H
+
+#ifndef BITCOIN_INDEX_BLOCKFILTERINDEX_H
+#define BITCOIN_INDEX_BLOCKFILTERINDEX_H
+
+#include <attributes.h>
+#include <blockfilter.h>
+#include <chain.h>
+#include <flatfile.h>
+#include <index/base.h>
+#include <util/hasher.h>
+
+#include <unordered_map>
+
+static const char* const DEFAULT_BLOCKFILTERINDEX = "0";
+
+/** Interval between compact filter checkpoints. See BIP 157. */
+static constexpr int CFCHECKPT_INTERVAL = 1000;
+
+/**
+ * BlockFilterIndex is used to store and retrieve block filters, hashes, and headers for a range of
+ * blocks by height. An index is constructed for each supported filter type with its own database
+ * (ie. filter data for different types are stored in separate databases).
+ *
+ * This index is used to serve BIP 157 net requests.
+ */
+class BlockFilterIndex final : public BaseIndex
+{
+private:
+    BlockFilterType m_filter_type;
+    std::unique_ptr<BaseIndex::DB> m_db;
+
+    FlatFilePos m_next_filter_pos;
+    std::unique_ptr<FlatFileSeq> m_filter_fileseq;
+
+    bool ReadFilterFromDisk(const FlatFilePos& pos, const uint256& hash, BlockFilter& filter) const;
+    size_t WriteFilterToDisk(FlatFilePos& pos, const BlockFilter& filter);
+
+    Mutex m_cs_headers_cache;
+    /** cache of block hash to filter header, to avoid disk access when responding to getcfcheckpt. */
+    std::unordered_map<uint256, uint256, FilterHeaderHasher> m_headers_cache GUARDED_BY(m_cs_headers_cache);
+
+    bool AllowPrune() const override { return true; }
+
+protected:
+    bool CustomInit(const std::optional<interfaces::BlockKey>& block) override;
+
+    bool CustomCommit(CDBBatch& batch) override;
+
+    bool CustomAppend(const interfaces::BlockInfo& block) override;
+
+    bool CustomRewind(const interfaces::BlockKey& current_tip, const interfaces::BlockKey& new_tip) override;
+
+    BaseIndex::DB& GetDB() const LIFETIMEBOUND override { return *m_db; }
+
+public:
+    /** Constructs the index, which becomes available to be queried. */
+    explicit BlockFilterIndex(std::unique_ptr<interfaces::Chain> chain, BlockFilterType filter_type,
+                              size_t n_cache_size, bool f_memory = false, bool f_wipe = false);
+
+    BlockFilterType GetFilterType() const { return m_filter_type; }
+
+    /** Get a single filter by block. */
+    bool LookupFilter(const CBlockIndex* block_index, BlockFilter& filter_out) const;
+
+    /** Get a single filter header by block. */
+    bool LookupFilterHeader(const CBlockIndex* block_index, uint256& header_out) EXCLUSIVE_LOCKS_REQUIRED(!m_cs_headers_cache);
+
+    /** Get a range of filters between two heights on a chain. */
+    bool LookupFilterRange(int start_height, const CBlockIndex* stop_index,
+                           std::vector<BlockFilter>& filters_out) const;
+
+    /** Get a range of filter hashes between two heights on a chain. */
+    bool LookupFilterHashRange(int start_height, const CBlockIndex* stop_index,
+                               std::vector<uint256>& hashes_out) const;
+};
+
+/**
+ * Get a block filter index by type. Returns nullptr if index has not been initialized or was
+ * already destroyed.
+ */
+BlockFilterIndex* GetBlockFilterIndex(BlockFilterType filter_type);
+
+/** Iterate over all running block filter indexes, invoking fn on each. */
+void ForEachBlockFilterIndex(std::function<void (BlockFilterIndex&)> fn);
+
+/**
+ * Initialize a block filter index for the given type if one does not already exist. Returns true if
+ * a new index is created and false if one has already been initialized.
+ */
+bool InitBlockFilterIndex(std::function<std::unique_ptr<interfaces::Chain>()> make_chain, BlockFilterType filter_type,
+                          size_t n_cache_size, bool f_memory = false, bool f_wipe = false);
+
+/**
+ * Destroy the block filter index with the given type. Returns false if no such index exists. This
+ * just releases the allocated memory and closes the database connection, it does not delete the
+ * index data.
+ */
+bool DestroyBlockFilterIndex(BlockFilterType filter_type);
+
+/** Destroy all open block filter indexes. */
+void DestroyAllBlockFilterIndexes();
+
+#endif // BITCOIN_INDEX_BLOCKFILTERINDEX_H
+
+getblockchaininfo
+
+  {                                         (json object)
+  "chain" : "str",                        (string) current network name (main, test, regtest)
+  "blocks" : n,                           (numeric) the height of the most-work fully-validated chain. The genesis block has height 0
+  "headers" : n,                          (numeric) the current number of headers we have validated
+  "bestblockhash" : "str",                (string) the hash of the currently best block
+  "difficulty" : n,                       (numeric) the current difficulty
+  "mediantime" : n,                       (numeric) median time for the current best block
+  "verificationprogress" : n,             (numeric) estimate of verification progress [0..1]
+  "initialblockdownload" : true|false,    (boolean) (debug information) estimate of whether this node is in Initial Block Download mode
+  "chainwork" : "hex",                    (string) total amount of work in active chain, in hexadecimal
+  "size_on_disk" : n,                     (numeric) the estimated size of the block and undo files on disk
+  "pruned" : true|false,                  (boolean) if the blocks are subject to pruning
+  "pruneheight" : n,                      (numeric) lowest-height complete block stored (only present if pruning is enabled)
+  "automatic_pruning" : true|false,       (boolean) whether automatic pruning is enabled (only present if pruning is enabled)
+  "prune_target_size" : n,                (numeric) the target size used by pruning (only present if automatic pruning is enabled)
+  "softforks" : {                         (json object) status of softforks
+    "xxxx" : {                            (json object) name of the softfork
+      "type" : "str",                     (string) one of "buried", "bip9"
+      "bip9" : {                          (json object) status of bip9 softforks (only for "bip9" type)
+        "status" : "str",                 (string) one of "defined", "started", "locked_in", "active", "failed"
+        "bit" : n,                        (numeric) the bit (0-28) in the block version field used to signal this softfork (only for "started" status)
+        "start_time" : xxx,               (numeric) the minimum median time past of a block at which the bit gains its meaning
+        "timeout" : xxx,                  (numeric) the median time past of a block at which the deployment is considered failed if not yet locked in
+        "since" : n,                      (numeric) height of the first block to which the status applies
+        "statistics" : {                  (json object) numeric statistics about BIP9 signalling for a softfork (only for "started" status)
+          "period" : n,                   (numeric) the length in blocks of the BIP9 signalling period
+          "threshold" : n,                (numeric) the number of blocks with the version bit set required to activate the feature
+          "elapsed" : n,                  (numeric) the number of blocks elapsed since the beginning of the current period
+          "count" : n,                    (numeric) the number of blocks with the version bit set in the current period
+          "possible" : true|false         (boolean) returns false if there are not enough blocks left in this period to pass activation threshold
+        }
+      },
+      "height" : n,                       (numeric) height of the first block which the rules are or will be enforced (only for "buried" type, or "bip9" type with "active" status)
+      "active" : true|false               (boolean) true if the rules are enforced for the mempool and the next block
+    },
+    ...
+  },
+  "warnings" : "str"                      (string) any network and blockchain warnings
+}
+
+getblockcount
+
+  curl --user myusername --data-binary '{"jsonrpc": "1.0", "id": "curltest", "method": "getblockcount", "params": []}' -H 'content-type: text/plain;' http://127.0.0.1:8332/
+
+getblockfilter "blockhash" ( "filtertype" )
+
+  {                      (json object)
+  "filter" : "hex",    (string) the hex-encoded filter data
+  "header" : "hex"     (string) the hex-encoded filter header
+}
+
+getblockhash height
+  
+    curl --user myusername --data-binary '{"jsonrpc": "1.0", "id": "curltest", "method": "getblockhash", "params": [1000]}' -H 'content-type: text/plain;' http://127.0.0.1:8332/
+
+getblockstats hash_or_height ( stats )
+
+    {                              (json object)
+  "avgfee" : n,                (numeric) Average fee in the block
+  "avgfeerate" : n,            (numeric) Average feerate (in satoshis per virtual byte)
+  "avgtxsize" : n,             (numeric) Average transaction size
+  "blockhash" : "hex",         (string) The block hash (to check for potential reorgs)
+  "feerate_percentiles" : [    (json array) Feerates at the 10th, 25th, 50th, 75th, and 90th percentile weight unit (in satoshis per virtual byte)
+    n,                         (numeric) The 10th percentile feerate
+    n,                         (numeric) The 25th percentile feerate
+    n,                         (numeric) The 50th percentile feerate
+    n,                         (numeric) The 75th percentile feerate
+    n                          (numeric) The 90th percentile feerate
+  ],
+  "height" : n,                (numeric) The height of the block
+  "ins" : n,                   (numeric) The number of inputs (excluding coinbase)
+  "maxfee" : n,                (numeric) Maximum fee in the block
+  "maxfeerate" : n,            (numeric) Maximum feerate (in satoshis per virtual byte)
+  "maxtxsize" : n,             (numeric) Maximum transaction size
+  "medianfee" : n,             (numeric) Truncated median fee in the block
+  "mediantime" : n,            (numeric) The block median time past
+  "mediantxsize" : n,          (numeric) Truncated median transaction size
+  "minfee" : n,                (numeric) Minimum fee in the block
+  "minfeerate" : n,            (numeric) Minimum feerate (in satoshis per virtual byte)
+  "mintxsize" : n,             (numeric) Minimum transaction size
+  "outs" : n,                  (numeric) The number of outputs
+  "subsidy" : n,               (numeric) The block subsidy
+  "swtotal_size" : n,          (numeric) Total size of all segwit transactions
+  "swtotal_weight" : n,        (numeric) Total weight of all segwit transactions
+  "swtxs" : n,                 (numeric) The number of segwit transactions
+  "time" : n,                  (numeric) The block time
+  "total_out" : n,             (numeric) Total amount in all outputs (excluding coinbase and thus reward [ie subsidy + totalfee])
+  "total_size" : n,            (numeric) Total size of all non-coinbase transactions
+  "total_weight" : n,          (numeric) Total weight of all non-coinbase transactions
+  "totalfee" : n,              (numeric) The fee total
+  "txs" : n,                   (numeric) The number of transactions (including coinbase)
+  "utxo_increase" : n,         (numeric) The increase/decrease in the number of unspent outputs
+  "utxo_size_inc" : n          (numeric) The increase/decrease in size for the utxo index (not discounting op_return and similar)
+}
+
+  // see valid-fork below 
+
+// soft forks as per BIP 9
+
+ State GetStateForBlock(block) {
+        if (block.height == 0) {
+            return DEFINED;
+        }
+
+// All blocks within retarget period have the same state, i.e., if floor(block1.height / 2016) = floor(block2.height / 2016), then blocks will have the same state for every deployment.
+
+        if ((block.height % 2016) != 0) {
+            return GetStateForBlock(block.parent);
+        }
+
+//  Otherwise, the next state depends on the previous state:
+
+        switch (GetStateForBlock(GetAncestorAtHeight(block, block.height - 2016))) {
+
+// remain in initial state until pass start time or timeout. 
+// GetMedianTimePast refers to median nTime of a block and its 10 predecessors. 
+// GetMedianTimePast(block.parent) is treated as a monotonic clock defined by the chain.
+// With each block and soft fork, there is one of five possible deployment states. 
+// DEFINED is the first state soft forks start in; genesis block is in this state.
+// STARTED for blocks past the starttime.
+// LOCKED_IN for one retarget period after the first retarget period with STARTED blocks,
+of which at least threshold have the associated bit set in nVersion.
+// ACTIVE for all blocks after LOCKED_IN retarget period, is a terminal state, no change possible after this state
+// FAILED for one retarget period past the timeout time, if LOCKED_IN was not reached, also a terminal state.
+
+// After period in STARTED state, if go past the timeout, switch to FAILED state. 
+// If not past timeout, tally the bits set, and transition to LOCKED_IN state if sufficient number of blocks in the past period set the deployment bit in their version numbers. 
+// Threshold is ≥1916 blocks (95% of 2016), or ≥1512 for testnet (75% of 2016). 
+// Transition to FAILED state takes precedence, as otherwise an ambiguity can arise. 
+// There could be two non-overlapping deployments on the same bit, where first one transitions to LOCKED_IN while second simultaneously transitions to STARTED, which would mean both would demand setting the bit.
+
+        case DEFINED:
+            if (GetMedianTimePast(block.parent) >= timeout) {
+                return FAILED;
+            }
+            if (GetMedianTimePast(block.parent) >= starttime) {
+                return STARTED;
+            }
+            return DEFINED;
+
+      case STARTED: 
+            if (GetMedianTimePast(block.parent) >= timeout) {
+                return FAILED;
+            }
+            int count = 0;
+            walk = block;
+            for (i = 0; i < 2016; i++) {
+                walk = walk.parent;
+                if (walk.nVersion & 0xE0000000 == 0x20000000 && (walk.nVersion >> bit) & 1 == 1) {
+                    count++;
+                }
+            }
+            if (count >= threshold) {
+                return LOCKED_IN;
+            }
+            return STARTED;
+
+// After a retarget period of LOCKED_IN, automatically transition to ACTIVE.
+
+        case LOCKED_IN:
+            return ACTIVE;
+
+// Note that both ACTIVE and FAILED are terminal states, no change once state reached.
+
+        case ACTIVE:
+            return ACTIVE;
+        case FAILED:
+            return FAILED;
+        }
+    }
+
+// a block's state never depends on its own nVersion, only that of its ancestors
+
+getchaintips
+
+    [                        (json array)
+  {                      (json object)
+    "height" : n,        (numeric) height of the chain tip
+    "hash" : "hex",      (string) block hash of the tip
+    "branchlen" : n,     (numeric) zero for main chain, otherwise length of branch connecting the tip to the main chain
+    "status" : "str"     (string) status of the chain, "active" for the main chain
+                         Possible values for status:
+                         1.  "invalid"               This branch contains at least one invalid block
+                         2.  "headers-only"          Not all blocks for this branch are available, but the headers are valid
+                         3.  "valid-headers"         All blocks are available for this branch, but they were never fully validated
+                         4.  "valid-fork"            This branch is not part of the active chain, but is fully validated
+                         5.  "active"                This is the tip of the active main chain, which is certainly valid
+  },
+  ...
+]
+
+getblocktemplate ( "template_request" )
+
+bitcoin-cli getblocktemplate '{"rules": ["segwit"]}'
+
+“rules”: [ (json array, required) A list of strings “segwit”, (string, required) (literal) indicates client side segwit support “str”, (string) other client side supported softfork deployment … ],
+
+{                                          (json object)
+  "version" : n,                           (numeric) The preferred block version
+  "rules" : [                              (json array) specific block rules that are to be enforced
+    "str",                                 (string) name of a rule the client must understand to some extent; see BIP 9 for format
+    ...
+  ],
+  "vbavailable" : {                        (json object) set of pending, supported versionbit (BIP 9) softfork deployments
+    "rulename" : n,                        (numeric) identifies the bit number as indicating acceptance and readiness for the named softfork rule
+    ...
+  },
+  "vbrequired" : n,                        (numeric) bit mask of versionbits the server requires set in submissions
+  "previousblockhash" : "str",             (string) The hash of current highest block
+  "transactions" : [                       (json array) contents of non-coinbase transactions that should be included in the next block
+    {                                      (json object)
+      "data" : "hex",                      (string) transaction data encoded in hexadecimal (byte-for-byte)
+      "txid" : "hex",                      (string) transaction id encoded in little-endian hexadecimal
+      "hash" : "hex",                      (string) hash encoded in little-endian hexadecimal (including witness data)
+      "depends" : [                        (json array) array of numbers
+        n,                                 (numeric) transactions before this one (by 1-based index in 'transactions' list) that must be present in the final block if this one is
+        ...
+      ],
+      "fee" : n,                           (numeric) difference in value between transaction inputs and outputs (in satoshis); for coinbase transactions, this is a negative Number of the total collected block fees (ie, not including the block subsidy); if key is not present, fee is unknown and clients MUST NOT assume there isn't one
+      "sigops" : n,                        (numeric) total SigOps cost, as counted for purposes of block limits; if key is not present, sigop cost is unknown and clients MUST NOT assume it is zero
+      "weight" : n                         (numeric) total transaction weight, as counted for purposes of block limits
+    },
+    ...
+  ],
+  "coinbaseaux" : {                        (json object) data that should be included in the coinbase's scriptSig content
+    "key" : "hex",                         (string) values must be in the coinbase (keys may be ignored)
+    ...
+  },
+  "coinbasevalue" : n,                     (numeric) maximum allowable input to coinbase transaction, including the generation award and transaction fees (in satoshis)
+  "longpollid" : "str",                    (string) an id to include with a request to longpoll on an update to this template
+  "target" : "str",                        (string) The hash target
+  "mintime" : xxx,                         (numeric) The minimum timestamp appropriate for the next block time, expressed in UNIX epoch time
+  "mutable" : [                            (json array) list of ways the block template may be changed
+    "str",                                 (string) A way the block template may be changed, e.g. 'time', 'transactions', 'prevblock'
+    ...
+  ],
+  "noncerange" : "hex",                    (string) A range of valid nonces
+  "sigoplimit" : n,                        (numeric) limit of sigops in blocks
+  "sizelimit" : n,                         (numeric) limit of block size
+  "weightlimit" : n,                       (numeric) limit of block weight
+  "curtime" : xxx,                         (numeric) current timestamp in UNIX epoch time
+  "bits" : "str",                          (string) compressed target of next block
+  "height" : n,                            (numeric) The height of the next block
+  "default_witness_commitment" : "str"     (string, optional) a valid witness commitment for the unmodified block template
+}
+
+getchaintxstats ( nblocks "blockhash" )
+
+    {                                       (json object)
+  "time" : xxx,                         (numeric) The timestamp for the final block in the window, expressed in UNIX epoch time
+  "txcount" : n,                        (numeric) The total number of transactions in the chain up to that point
+  "window_final_block_hash" : "hex",    (string) The hash of the final block in the window
+  "window_final_block_height" : n,      (numeric) The height of the final block in the window.
+  "window_block_count" : n,             (numeric) Size of the window in number of blocks
+  "window_tx_count" : n,                (numeric) The number of transactions in the window. Only returned if "window_block_count" is > 0
+  "window_interval" : n,                (numeric) The elapsed time in the window in seconds. Only returned if "window_block_count" is > 0
+  "txrate" : n                          (numeric) The average rate of transactions per second in the window. Only returned if "window_interval" is > 0
+}
+
+getdifficulty
+
+  curl --user myusername --data-binary '{"jsonrpc": "1.0", "id": "curltest", "method": "getdifficulty", "params": []}' -H 'content-type: text/plain;' http://127.0.0.1:8332/
+
+getmempoolancestors "txid"
+
+  {                                         (json object)
+  "transactionid" : {                     (json object)
+    "vsize" : n,                          (numeric) virtual transaction size as defined in BIP 141. This is different from actual serialized size for witness transactions as witness data is discounted.
+    "weight" : n,                         (numeric) transaction weight as defined in BIP 141.
+    "fee" : n,                            (numeric) transaction fee in BTC (DEPRECATED)
+    "modifiedfee" : n,                    (numeric) transaction fee with fee deltas used for mining priority (DEPRECATED)
+    "time" : xxx,                         (numeric) local time transaction entered pool in seconds since 1 Jan 1970 GMT
+    "height" : n,                         (numeric) block height when transaction entered pool
+    "descendantcount" : n,                (numeric) number of in-mempool descendant transactions (including this one)
+    "descendantsize" : n,                 (numeric) virtual transaction size of in-mempool descendants (including this one)
+    "descendantfees" : n,                 (numeric) modified fees (see above) of in-mempool descendants (including this one) (DEPRECATED)
+    "ancestorcount" : n,                  (numeric) number of in-mempool ancestor transactions (including this one)
+    "ancestorsize" : n,                   (numeric) virtual transaction size of in-mempool ancestors (including this one)
+    "ancestorfees" : n,                   (numeric) modified fees (see above) of in-mempool ancestors (including this one) (DEPRECATED)
+    "wtxid" : "hex",                      (string) hash of serialized transaction, including witness data
+    "fees" : {                            (json object)
+      "base" : n,                         (numeric) transaction fee in BTC
+      "modified" : n,                     (numeric) transaction fee with fee deltas used for mining priority in BTC
+      "ancestor" : n,                     (numeric) modified fees (see above) of in-mempool ancestors (including this one) in BTC
+      "descendant" : n                    (numeric) modified fees (see above) of in-mempool descendants (including this one) in BTC
+    },
+    "depends" : [                         (json array) unconfirmed transactions used as inputs for this transaction
+      "hex",                              (string) parent transaction id
+      ...
+    ],
+    "spentby" : [                         (json array) unconfirmed transactions spending outputs from this transaction
+      "hex",                              (string) child transaction id
+      ...
+    ],
+    "bip125-replaceable" : true|false,    (boolean) Whether this transaction could be replaced due to BIP125 (replace-by-fee)
+    "unbroadcast" : true|false            (boolean) Whether this transaction is currently unbroadcast (initial broadcast not yet acknowledged by any peers)
+  },
+  ...
+}
+FILETYPE        VFT_APP
+BEGIN
+    BLOCK "StringFileInfo"
+    BEGIN
+        BLOCK "0_______" // U.S. English - multilingual (hex)
+        BEGIN
+            VALUE "CompanyName",        "Blocktech LLC, a Colorado LLC"
+            VALUE "FileDescription",    "slidechain"
+            VALUE "FileVersion",        PACKAGE_VERSION
+            VALUE "InternalName",       "slidechain-util"
+            VALUE "LegalPatent9608829", PATENT_IN_EFFECT
+            VALUE "LegalPatent9836908", PATENT_IN_EFFECT
+            VALUE "LegalTrademarks1",   "Subject to patents and any validly granted license"
+            VALUE "OriginalFilename",   "slidechain-util.exe"
+            VALUE "ProductName",        "slidechain-util"
+            VALUE "ProductVersion",     PACKAGE_VERSION
+        END
+    END
+
+    BLOCK "VarFileInfo"
+    BEGIN
+        VALUE "Translation", 0x0, 1252 // language neutral - multilingual (decimal)
+    END
+END
+
+// short hash or revisable hash
+
+#include <blockencodings.h>
+#include <chainparams.h>
+#include <common/system.h>
+#include <consensus/consensus.h>
+#include <consensus/validation.h>
+#include <crypto/sha256.h>
+#include <crypto/siphash.h>
+#include <logging.h>
+#include <random.h>
+#include <streams.h>
+#include <txmempool.h>
+#include <validation.h>
+
+#include <unordered_map>
+
+CBlockHeaderAndShortTxIDs::CBlockHeaderAndShortTxIDs(const CBlock& block) :
+        nonce(GetRand<uint64_t>()),
+        shorttxids(block.vtx.size() - 1), prefilledtxn(1), header(block) {
+    FillShortTxIDSelector();
+    //TODO: Use our mempool prior to block acceptance to predictively fill more than just the coinbase
+    prefilledtxn[0] = {0, block.vtx[0]};
+    for (size_t i = 1; i < block.vtx.size(); i++) {
+        const CTransaction& tx = *block.vtx[i];
+        shorttxids[i - 1] = GetShortID(tx.GetWitnessHash());
+    }
+}
+
+#if defined(HAVE_CONFIG_H)
+#include <config/bitcoin-config.h>
+#endif
+
+#include <arith_uint256.h>
+#include <chain.h>
+#include <chainparams.h>
+#include <chainparamsbase.h>
+#include <clientversion.h>
+#include <common/args.h>
+#include <common/system.h>
+#include <compat/compat.h>
+#include <core_io.h>
+#include <streams.h>
+#include <util/exception.h>
+#include <util/strencodings.h>
+#include <util/translation.h>
+
+#include <atomic>
+#include <cstdio>
+#include <functional>
+#include <memory>
+#include <thread>
+
+static const int CONTINUE_EXECUTION=-1;
+
+const std::function<std::string(const char*)> G_TRANSLATION_FUN = nullptr;
+
+static void SetupBitcoinUtilArgs(ArgsManager &argsman)
+{
+    SetupHelpOptions(argsman);
+
+    argsman.AddArg("-version", "Print version and exit", ArgsManager::ALLOW_ANY, OptionsCategory::OPTIONS);
+
+    argsman.AddCommand("grind", "Perform proof of work on hex header string");
+
+    SetupChainParamsBaseOptions(argsman);
+}
+
+// This function returns either one of EXIT_ codes when it's expected to stop the process or
+// CONTINUE_EXECUTION when it's expected to continue further.
+static int AppInitUtil(ArgsManager& args, int argc, char* argv[])
+{
+    SetupBitcoinUtilArgs(args);
+    std::string error;
+    if (!args.ParseParameters(argc, argv, error)) {
+        tfm::format(std::cerr, "Error parsing command line arguments: %s\n", error);
+        return EXIT_FAILURE;
+    }
+
+    if (HelpRequested(args) || args.IsArgSet("-version")) {
+        // First part of help message is specific to this utility
+        std::string strUsage = PACKAGE_NAME " bitcoin-util utility version " + FormatFullVersion() + "\n";
+
+        if (args.IsArgSet("-version")) {
+            strUsage += FormatParagraph(LicenseInfo());
+        } else {
+            strUsage += "\n"
+                "Usage:  bitcoin-util [options] [commands]  Do stuff\n";
+            strUsage += "\n" + args.GetHelpMessage();
+        }
+
+        tfm::format(std::cout, "%s", strUsage);
+
+        if (argc < 2) {
+            tfm::format(std::cerr, "Error: too few parameters\n");
+            return EXIT_FAILURE;
+        }
+        return EXIT_SUCCESS;
+    }
+
+    // Check for chain settings (Params() calls are only valid after this clause)
+    try {
+        SelectParams(args.GetChainType());
+    } catch (const std::exception& e) {
+        tfm::format(std::cerr, "Error: %s\n", e.what());
+        return EXIT_FAILURE;
+    }
+
+BlockFilter::BlockFilter(BlockFilterType filter_type, const uint256& block_hash,
+                         std::vector<unsigned char> filter, bool skip_decode_check)
+    : m_filter_type(filter_type), m_block_hash(block_hash)
+{
+    GCSFilter::Params params;
+    if (!BuildParams(params)) {
+        throw std::invalid_argument("unknown filter_type");
+    }
+    m_filter = GCSFilter(params, std::move(filter), skip_decode_check);
+}
+
+BlockFilter::BlockFilter(BlockFilterType filter_type, const CBlock& block, const CBlockUndo& block_undo)
+    : m_filter_type(filter_type), m_block_hash(block.GetHash())
+{
+    GCSFilter::Params params;
+    if (!BuildParams(params)) {
+        throw std::invalid_argument("unknown filter_type");
+    }
+    m_filter = GCSFilter(params, BasicFilterElements(block, block_undo));
+}
+
+bool BlockFilter::BuildParams(GCSFilter::Params& params) const
+{
+    switch (m_filter_type) {
+    case BlockFilterType::BASIC:
+        params.m_siphash_k0 = m_block_hash.GetUint64(0);
+        params.m_siphash_k1 = m_block_hash.GetUint64(1);
+        params.m_P = BASIC_FILTER_P;
+        params.m_M = BASIC_FILTER_M;
+        return true;
+    case BlockFilterType::INVALID:
+        return false;
+    }
+
+    return false;
+}
+
+uint256 BlockFilter::GetHash() const
+{
+    return Hash(GetEncodedFilter());
+}
+
+uint256 BlockFilter::ComputeHeader(const uint256& prev_header) const
+{
+    return Hash(GetHash(), prev_header);
+}
+peer.m_num_unconnecting_headers_msgs++;
+    // Try to fill in the missing headers.
+    const CBlockIndex* best_header{WITH_LOCK(cs_main, return m_chainman.m_best_header)};
+    if (MaybeSendGetHeaders(pfrom, GetLocator(best_header), peer)) {
+        LogPrint(BCLog::NET, "received header %s: missing prev block %s, sending getheaders (%d) to end (peer=%d, m_num_unconnecting_headers_msgs=%d)\n",
+            headers[0].GetHash().ToString(),
+            headers[0].hashPrevBlock.ToString(),
+            best_header->nHeight,
+            pfrom.GetId(), peer.m_num_unconnecting_headers_msgs);
+    }
+
+    // Set hashLastUnknownBlock for this peer, so that if we
+    // eventually get the headers - even from a different peer -
+    // we can use this peer to download.
+    WITH_LOCK(cs_main, UpdateBlockAvailability(pfrom.GetId(), headers.back().GetHash()));
+
+    // The peer may just be broken, so periodically assign DoS points if this
+    // condition persists.
+    if (peer.m_num_unconnecting_headers_msgs % MAX_NUM_UNCONNECTING_HEADERS_MSGS == 0) {
+        Misbehaving(peer, 20, strprintf("%d non-connecting headers", peer.m_num_unconnecting_headers_msgs));
+    }
+}
+
+bool PeerManagerImpl::CheckHeadersAreContinuous(const std::vector<CBlockHeader>& headers) const
+{
+    uint256 hashLastBlock;
+    for (const CBlockHeader& header : headers) {
+        if (!hashLastBlock.IsNull() && header.hashPrevBlock != hashLastBlock) {
+            return false;
+        }
+        hashLastBlock = header.GetHash();
+    }
+    return true;
+}
+
+/**
+ * Complete block filter struct as defined in BIP 157. Serialization matches
+ * payload of "cfilter" messages.
+ */
+class BlockFilter
+{
+private:
+    BlockFilterType m_filter_type = BlockFilterType::INVALID;
+    uint256 m_block_hash;
+    GCSFilter m_filter;
+
+    bool BuildParams(GCSFilter::Params& params) const;
+
+public:
+
+    BlockFilter() = default;
+
+    //! Reconstruct a BlockFilter from parts.
+    BlockFilter(BlockFilterType filter_type, const uint256& block_hash,
+                std::vector<unsigned char> filter, bool skip_decode_check);
+
+    //! Construct a new BlockFilter of the specified type from a block.
+    BlockFilter(BlockFilterType filter_type, const CBlock& block, const CBlockUndo& block_undo);
+
+    BlockFilterType GetFilterType() const { return m_filter_type; }
+    const uint256& GetBlockHash() const LIFETIMEBOUND { return m_block_hash; }
+    const GCSFilter& GetFilter() const LIFETIMEBOUND { return m_filter; }
+
+    const std::vector<unsigned char>& GetEncodedFilter() const LIFETIMEBOUND
+    {
+        return m_filter.GetEncoded();
+    }
+
+    //! Compute the filter hash.
+    uint256 GetHash() const;
+
+    //! Compute the filter header given the previous one.
+    uint256 ComputeHeader(const uint256& prev_header) const;
+
+    template <typename Stream>
+    void Serialize(Stream& s) const {
+        s << static_cast<uint8_t>(m_filter_type)
+          << m_block_hash
+          << m_filter.GetEncoded();
+    }
+
+    template <typename Stream>
+    void Unserialize(Stream& s) {
+        std::vector<unsigned char> encoded_filter;
+        uint8_t filter_type;
+
+        s >> filter_type
+          >> m_block_hash
+          >> encoded_filter;
+
+        m_filter_type = static_cast<BlockFilterType>(filter_type);
+
+        GCSFilter::Params params;
+        if (!BuildParams(params)) {
+            throw std::ios_base::failure("unknown filter_type");
+        }
+        m_filter = GCSFilter(params, std::move(encoded_filter), /*skip_decode_check=*/false);
+    }
+};
+
+#endif // BITCOIN_BLOCKFILTER_H
+
+//! block header
+    int32_t nVersion{0};
+    uint256 hashMerkleRoot{};
+    uint32_t nTime{0};
+    uint32_t nBits{0};
+    uint32_t nNonce{0};
+
+    //! (memory only) Sequential id assigned to distinguish order in which blocks are received.
+    int32_t nSequenceId{0};
+
+    //! (memory only) Maximum nTime in the chain up to and including this block.
+    unsigned int nTimeMax{0};
+
+    explicit CBlockIndex(const CBlockHeader& block)
+        : nVersion{block.nVersion},
+          hashMerkleRoot{block.hashMerkleRoot},
+          nTime{block.nTime},
+          nBits{block.nBits},
+          nNonce{block.nNonce}
+    {
+    }  
+
+getmempoolentry "txid"
+
+      {                                       (json object)
+  "vsize" : n,                          (numeric) virtual transaction size as defined in BIP 141. This is different from actual serialized size for witness transactions as witness data is discounted.
+  "weight" : n,                         (numeric) transaction weight as defined in BIP 141.
+  "fee" : n,                            (numeric) transaction fee in BTC (DEPRECATED)
+  "modifiedfee" : n,                    (numeric) transaction fee with fee deltas used for mining priority (DEPRECATED)
+  "time" : xxx,                         (numeric) local time transaction entered pool in seconds since 1 Jan 1970 GMT
+  "height" : n,                         (numeric) block height when transaction entered pool
+  "descendantcount" : n,                (numeric) number of in-mempool descendant transactions (including this one)
+  "descendantsize" : n,                 (numeric) virtual transaction size of in-mempool descendants (including this one)
+  "descendantfees" : n,                 (numeric) modified fees (see above) of in-mempool descendants (including this one) (DEPRECATED)
+  "ancestorcount" : n,                  (numeric) number of in-mempool ancestor transactions (including this one)
+  "ancestorsize" : n,                   (numeric) virtual transaction size of in-mempool ancestors (including this one)
+  "ancestorfees" : n,                   (numeric) modified fees (see above) of in-mempool ancestors (including this one) (DEPRECATED)
+  "wtxid" : "hex",                      (string) hash of serialized transaction, including witness data
+  "fees" : {                            (json object)
+    "base" : n,                         (numeric) transaction fee in BTC
+    "modified" : n,                     (numeric) transaction fee with fee deltas used for mining priority in BTC
+    "ancestor" : n,                     (numeric) modified fees (see above) of in-mempool ancestors (including this one) in BTC
+    "descendant" : n                    (numeric) modified fees (see above) of in-mempool descendants (including this one) in BTC
+  },
+  "depends" : [                         (json array) unconfirmed transactions used as inputs for this transaction
+    "hex",                              (string) parent transaction id
+    ...
+  ],
+  "spentby" : [                         (json array) unconfirmed transactions spending outputs from this transaction
+    "hex",                              (string) child transaction id
+    ...
+  ],
+  "bip125-replaceable" : true|false,    (boolean) Whether this transaction could be replaced due to BIP125 (replace-by-fee)
+  "unbroadcast" : true|false            (boolean) Whether this transaction is currently unbroadcast (initial broadcast not yet acknowledged by any peers)
+}
+
+getmempoolinfo
+
+    {                            (json object)
+  "loaded" : true|false,     (boolean) True if the mempool is fully loaded
+  "size" : n,                (numeric) Current tx count
+  "bytes" : n,               (numeric) Sum of all virtual transaction sizes as defined in BIP 141. Differs from actual serialized size because witness data is discounted
+  "usage" : n,               (numeric) Total memory usage for the mempool
+  "maxmempool" : n,          (numeric) Maximum memory usage for the mempool
+  "mempoolminfee" : n,       (numeric) Minimum fee rate in BTC/kB for tx to be accepted. Is the maximum of minrelaytxfee and minimum mempool fee
+  "minrelaytxfee" : n,       (numeric) Current minimum relay fee for transactions
+  "unbroadcastcount" : n     (numeric) Current number of transactions that haven't passed initial broadcast yet
+}
+
+gettxoutproof ["txid",...] ( "blockhash" )
+
+//! Return true if a setting is set in the default config file section, and not
+//! overridden by a higher priority command-line or network section value.
+//!
+//! This is used to provide user warnings about values that might be getting
+//! ignored unintentionally.
+bool OnlyHasDefaultSectionSetting(const Settings& settings, const std::string& section, const std::string& name);
+
+//! Accessor for list of settings that skips negated values when iterated over.
+//! The last boolean `false` value in the list and all earlier values are
+//! considered negated.
+struct SettingsSpan {
+    explicit SettingsSpan() = default;
+    explicit SettingsSpan(const SettingsValue& value) noexcept : SettingsSpan(&value, 1) {}
+    explicit SettingsSpan(const SettingsValue* data, size_t size) noexcept : data(data), size(size) {}
+    explicit SettingsSpan(const std::vector<SettingsValue>& vec) noexcept;
+    const SettingsValue* begin() const; //!< Pointer to first non-negated value.
+    const SettingsValue* end() const;   //!< Pointer to end of values.
+    bool empty() const;                 //!< True if there are any non-negated values.
+    bool last_negated() const;          //!< True if the last value is negated.
+    size_t negated() const;             //!< Number of negated values.
+
+    const SettingsValue* data = nullptr;
+    size_t size = 0;
+};
+
+//! Map lookup helper.
+template <typename Map, typename Key>
+auto FindKey(Map&& map, Key&& key) -> decltype(&map.at(key))
+{
+    auto it = map.find(key);
+    return it == map.end() ? nullptr : &it->second;
+}
+
+} // namespace common
+
+#endif // BITCOIN_COMMON_SETTINGS_H
+
+#ifndef BITCOIN_CONSENSUS_CONSENSUS_H
+#define BITCOIN_CONSENSUS_CONSENSUS_H
+
+#include <cstdlib>
+#include <stdint.h>
+
+/** The maximum allowed size for a serialized block, in bytes (only for buffer size limits) */
+static const unsigned int MAX_BLOCK_SERIALIZED_SIZE = 4000000;
+/** The maximum allowed weight for a block, see BIP 141 (network rule) */
+static const unsigned int MAX_BLOCK_WEIGHT = 4000000;
+/** The maximum allowed number of signature check operations in a block (network rule) */
+static const int64_t MAX_BLOCK_SIGOPS_COST = 80000;
+/** Coinbase transaction outputs can only be spent after this number of new blocks (network rule) */
+static const int COINBASE_MATURITY = 100;
+
+static const int WITNESS_SCALE_FACTOR = 4;
+
+static const size_t MIN_TRANSACTION_WEIGHT = WITNESS_SCALE_FACTOR * 60; // 60 is the lower bound for the size of a valid serialized CTransaction
+static const size_t MIN_SERIALIZABLE_TRANSACTION_WEIGHT = WITNESS_SCALE_FACTOR * 10; // 10 is the lower bound for the size of a serialized CTransaction
+
+/** Flags for nSequence and nLockTime locks */
+/** Interpret sequence numbers as relative lock-time constraints. */
+static constexpr unsigned int LOCKTIME_VERIFY_SEQUENCE = (1 << 0);
+
+#endif // BITCOIN_CONSENSUS_CONSENSUS_H
+
+#ifndef BITCOIN_CONSENSUS_MERKLE_H
+#define BITCOIN_CONSENSUS_MERKLE_H
+
+#include <vector>
+
+#include <primitives/block.h>
+#include <uint256.h>
+
+uint256 ComputeMerkleRoot(std::vector<uint256> hashes, bool* mutated = nullptr);
+
+/*
+ * Compute the Merkle root of the transactions in a block.
+ * *mutated is set to true if a duplicated subtree was found.
+ */
+uint256 BlockMerkleRoot(const CBlock& block, bool* mutated = nullptr);
+
+/*
+ * Compute the Merkle root of the witness transactions in a block.
+ * *mutated is set to true if a duplicated subtree was found.
+ */
+uint256 BlockWitnessMerkleRoot(const CBlock& block, bool* mutated = nullptr);
+
+#endif // BITCOIN_CONSENSUS_MERKLE_H
+
+#ifndef BITCOIN_CONSENSUS_PARAMS_H
+#define BITCOIN_CONSENSUS_PARAMS_H
+
+#include <uint256.h>
+
+#include <chrono>
+#include <limits>
+#include <map>
+#include <vector>
+
+namespace Consensus {
+
+/**
+ * A buried deployment is one where the height of the activation has been hardcoded into
+ * the client implementation long after the consensus change has activated. See BIP 90.
+ */
+enum BuriedDeployment : int16_t {
+    // buried deployments get negative values to avoid overlap with DeploymentPos
+    DEPLOYMENT_HEIGHTINCB = std::numeric_limits<int16_t>::min(),
+    DEPLOYMENT_CLTV,
+    DEPLOYMENT_DERSIG,
+    DEPLOYMENT_CSV,
+    DEPLOYMENT_SEGWIT,
+};
+constexpr bool ValidDeployment(BuriedDeployment dep) { return dep <= DEPLOYMENT_SEGWIT; }
+
+enum DeploymentPos : uint16_t {
+    DEPLOYMENT_TESTDUMMY,
+    DEPLOYMENT_TAPROOT, // Deployment of Schnorr/Taproot (BIPs 340-342)
+    // NOTE: Also add new deployments to VersionBitsDeploymentInfo in deploymentinfo.cpp
+    MAX_VERSION_BITS_DEPLOYMENTS
+};
+constexpr bool ValidDeployment(DeploymentPos dep) { return dep < MAX_VERSION_BITS_DEPLOYMENTS; }
+
+/**
+ * Struct for each individual consensus rule change using BIP9.
+ */
+struct BIP9Deployment {
+    /** Bit position to select the particular bit in nVersion. */
+    int bit{28};
+    /** Start MedianTime for version bits miner confirmation. Can be a date in the past */
+    int64_t nStartTime{NEVER_ACTIVE};
+    /** Timeout/expiry MedianTime for the deployment attempt. */
+    int64_t nTimeout{NEVER_ACTIVE};
+    /** If lock in occurs, delay activation until at least this block
+     *  height.  Note that activation will only occur on a retarget
+     *  boundary.
+     */
+    int min_activation_height{0};
+
+    /** Constant for nTimeout very far in the future. */
+    static constexpr int64_t NO_TIMEOUT = std::numeric_limits<int64_t>::max();
+
+    /** Special value for nStartTime indicating that the deployment is always active.
+     *  This is useful for testing, as it means tests don't need to deal with the activation
+     *  process (which takes at least 3 BIP9 intervals). Only tests that specifically test the
+     *  behaviour during activation cannot use this. */
+    static constexpr int64_t ALWAYS_ACTIVE = -1;
+
+    /** Special value for nStartTime indicating that the deployment is never active.
+     *  This is useful for integrating the code changes for a new feature
+     *  prior to deploying it on some or all networks. */
+    static constexpr int64_t NEVER_ACTIVE = -2;
+};
+
+static int AppInitUtil(ArgsManager& args, int argc, char* argv[])
+{
+    SetupBitcoinUtilArgs(args);
+    std::string error;
+    if (!args.ParseParameters(argc, argv, error)) {
+        tfm::format(std::cerr, "Error parsing command line arguments: %s\n", error);
+        return EXIT_FAILURE;
+    }
+
+    if (HelpRequested(args) || args.IsArgSet("-version")) {
+        // First part of help message is specific to this utility
+        std::string strUsage = PACKAGE_NAME " bitcoin-util utility version " + FormatFullVersion() + "\n";
+
+        if (args.IsArgSet("-version")) {
+            strUsage += FormatParagraph(LicenseInfo());
+        } else {
+            strUsage += "\n"
+                "Usage:  bitcoin-util [options] [commands]  Do stuff\n";
+            strUsage += "\n" + args.GetHelpMessage();
+        }
+
+        tfm::format(std::cout, "%s", strUsage);
+
+        if (argc < 2) {
+            tfm::format(std::cerr, "Error: too few parameters\n");
+            return EXIT_FAILURE;
+        }
+        return EXIT_SUCCESS;
+    }
+
+    // Check for chain settings (Params() calls are only valid after this clause)
+    try {
+        SelectParams(args.GetChainType());
+    } catch (const std::exception& e) {
+        tfm::format(std::cerr, "Error: %s\n", e.what());
+        return EXIT_FAILURE;
+    }
+
+    return CONTINUE_EXECUTION;
+}
+
+static void grind_task(uint32_t nBits, CBlockHeader header, uint32_t offset, uint32_t step, std::atomic<bool>& found, uint32_t& proposed_nonce)
+{
+    arith_uint256 target;
+    bool neg, over;
+    target.SetCompact(nBits, &neg, &over);
+    if (target == 0 || neg || over) return;
+    header.nNonce = offset;
+
+    uint32_t finish = std::numeric_limits<uint32_t>::max() - step;
+    finish = finish - (finish % step) + offset;
+
+    while (!found && header.nNonce < finish) {
+        const uint32_t next = (finish - header.nNonce < 5000*step) ? finish : header.nNonce + 5000*step;
+        do {
+            if (UintToArith256(header.GetHash()) <= target) {
+                if (!found.exchange(true)) {
+                    proposed_nonce = header.nNonce;
+                }
+                return;
+            }
+            header.nNonce += step;
+        } while(header.nNonce != next);
+    }
+}
+
+static int Grind(const std::vector<std::string>& args, std::string& strPrint)
+{
+    if (args.size() != 1) {
+        strPrint = "Must specify block header to grind";
+        return EXIT_FAILURE;
+    }
+
+    CBlockHeader header;
+    if (!DecodeHexBlockHeader(header, args[0])) {
+        strPrint = "Could not decode block header";
+        return EXIT_FAILURE;
+    }
+
+    uint32_t nBits = header.nBits;
+    std::atomic<bool> found{false};
+    uint32_t proposed_nonce{};
+
+    std::vector<std::thread> threads;
+    int n_tasks = std::max(1u, std::thread::hardware_concurrency());
+    threads.reserve(n_tasks);
+    for (int i = 0; i < n_tasks; ++i) {
+        threads.emplace_back(grind_task, nBits, header, i, n_tasks, std::ref(found), std::ref(proposed_nonce));
+    }
+    for (auto& t : threads) {
+        t.join();
+    }
+    if (found) {
+        header.nNonce = proposed_nonce;
+    } else {
+        strPrint = "Could not satisfy difficulty target";
+        return EXIT_FAILURE;
+    }
+
+    DataStream ss{};
+    ss << header;
+    strPrint = HexStr(ss);
+    return EXIT_SUCCESS;
+}
+
+MAIN_FUNCTION
+{
+    ArgsManager& args = gArgs;
+    SetupEnvironment();
+
+    try {
+        int ret = AppInitUtil(args, argc, argv);
+        if (ret != CONTINUE_EXECUTION) {
+            return ret;
+        }
+    } catch (const std::exception& e) {
+        PrintExceptionContinue(&e, "AppInitUtil()");
+        return EXIT_FAILURE;
+    } catch (...) {
+        PrintExceptionContinue(nullptr, "AppInitUtil()");
+        return EXIT_FAILURE;
+    }
+
+    const auto cmd = args.GetCommand();
+    if (!cmd) {
+        tfm::format(std::cerr, "Error: must specify a command\n");
+        return EXIT_FAILURE;
+    }
+
+    int ret = EXIT_FAILURE;
+    std::string strPrint;
+    try {
+        if (cmd->command == "grind") {
+            ret = Grind(cmd->args, strPrint);
+        } else {
+            assert(false); // unknown command should be caught earlier
+        }
+    } catch (const std::exception& e) {
+        strPrint = std::string("error: ") + e.what();
+    } catch (...) {
+        strPrint = "unknown error";
+    }
+
+    if (strPrint != "") {
+        tfm::format(ret == 0 ? std::cout : std::cerr, "%s\n", strPrint);
+    }
+
+    return ret;
+}
+
+static GCSFilter::ElementSet BasicFilterElements(const CBlock& block,
+                                                 const CBlockUndo& block_undo)
+{
+    GCSFilter::ElementSet elements;
+
+    for (const CTransactionRef& tx : block.vtx) {
+        for (const CTxOut& txout : tx->vout) {
+            const CScript& script = txout.scriptPubKey;
+            if (script.empty() || script[0] == OP_RETURN) continue;
+            elements.emplace(script.begin(), script.end());
+        }
+    }
+
+    for (const CTxUndo& tx_undo : block_undo.vtxundo) {
+        for (const Coin& prevout : tx_undo.vprevout) {
+            const CScript& script = prevout.out.scriptPubKey;
+            if (script.empty()) continue;
+            elements.emplace(script.begin(), script.end());
+        }
+    }
+
+    return elements;
+}
+
+BlockFilter::BlockFilter(BlockFilterType filter_type, const uint256& block_hash,
+                         std::vector<unsigned char> filter, bool skip_decode_check)
+    : m_filter_type(filter_type), m_block_hash(block_hash)
+{
+    GCSFilter::Params params;
+    if (!BuildParams(params)) {
+        throw std::invalid_argument("unknown filter_type");
+    }
+    m_filter = GCSFilter(params, std::move(filter), skip_decode_check);
+}
+
+BlockFilter::BlockFilter(BlockFilterType filter_type, const CBlock& block, const CBlockUndo& block_undo)
+    : m_filter_type(filter_type), m_block_hash(block.GetHash())
+{
+    GCSFilter::Params params;
+    if (!BuildParams(params)) {
+        throw std::invalid_argument("unknown filter_type");
+    }
+    m_filter = GCSFilter(params, BasicFilterElements(block, block_undo));
+}
+
+bool BlockFilter::BuildParams(GCSFilter::Params& params) const
+{
+    switch (m_filter_type) {
+    case BlockFilterType::BASIC:
+        params.m_siphash_k0 = m_block_hash.GetUint64(0);
+        params.m_siphash_k1 = m_block_hash.GetUint64(1);
+        params.m_P = BASIC_FILTER_P;
+        params.m_M = BASIC_FILTER_M;
+        return true;
+    case BlockFilterType::INVALID:
+        return false;
+    }
+
+    return false;
+}
+
+uint256 BlockFilter::GetHash() const
+{
+    return Hash(GetEncodedFilter());
+}
+
+uint256 BlockFilter::ComputeHeader(const uint256& prev_header) const
+{
+    return Hash(GetHash(), prev_header);
+}
+peer.m_num_unconnecting_headers_msgs++;
+    // Try to fill in the missing headers.
+    const CBlockIndex* best_header{WITH_LOCK(cs_main, return m_chainman.m_best_header)};
+    if (MaybeSendGetHeaders(pfrom, GetLocator(best_header), peer)) {
+        LogPrint(BCLog::NET, "received header %s: missing prev block %s, sending getheaders (%d) to end (peer=%d, m_num_unconnecting_headers_msgs=%d)\n",
+            headers[0].GetHash().ToString(),
+            headers[0].hashPrevBlock.ToString(),
+            best_header->nHeight,
+            pfrom.GetId(), peer.m_num_unconnecting_headers_msgs);
+    }
+
+    // Set hashLastUnknownBlock for this peer, so that if we
+    // eventually get the headers - even from a different peer -
+    // we can use this peer to download.
+    WITH_LOCK(cs_main, UpdateBlockAvailability(pfrom.GetId(), headers.back().GetHash()));
+
+    // The peer may just be broken, so periodically assign DoS points if this
+    // condition persists.
+    if (peer.m_num_unconnecting_headers_msgs % MAX_NUM_UNCONNECTING_HEADERS_MSGS == 0) {
+        Misbehaving(peer, 20, strprintf("%d non-connecting headers", peer.m_num_unconnecting_headers_msgs));
+    }
+}
+
+bool PeerManagerImpl::CheckHeadersAreContinuous(const std::vector<CBlockHeader>& headers) const
+{
+    uint256 hashLastBlock;
+    for (const CBlockHeader& header : headers) {
+        if (!hashLastBlock.IsNull() && header.hashPrevBlock != hashLastBlock) {
+            return false;
+        }
+        hashLastBlock = header.GetHash();
+    }
+    return true;
+}
+
+/**
+ * Complete block filter struct as defined in BIP 157. Serialization matches
+ * payload of "cfilter" messages.
+ */
+class BlockFilter
+{
+private:
+    BlockFilterType m_filter_type = BlockFilterType::INVALID;
+    uint256 m_block_hash;
+    GCSFilter m_filter;
+
+    
