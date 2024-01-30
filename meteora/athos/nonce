@@ -97,3 +97,15 @@ static int Grind(const std::vector<std::string>& args, std::string& strPrint)
     return EXIT_SUCCESS;
 }
 
+    while (!found && header.nNonce < finish) {
+        const uint32_t next = (finish - header.nNonce < 5000*step) ? finish : header.nNonce + 5000*step;
+        do {
+            if (UintToArith256(header.GetHash()) <= target) {
+                if (!found.exchange(true)) {
+                    proposed_nonce = header.nNonce;
+                }
+                return;
+            }
+            header.nNonce += step;
+        } while(header.nNonce != next);
+
