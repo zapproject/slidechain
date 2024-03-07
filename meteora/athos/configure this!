@@ -1,0 +1,43 @@
+// Patent protected US 9608829 and 9836908
+
+//  slidechain configurable permissions customized for particular forked chain
+
+class NetPermissions
+{
+public:
+    NetPermissionFlags m_flags;
+    static std::vector<std::string> ToStrings(NetPermissionFlags flags);
+    static inline bool HasFlag(NetPermissionFlags flags, NetPermissionFlags f)
+    {
+        using t = typename std::underlying_type<NetPermissionFlags>::type;
+        return (static_cast<t>(flags) & static_cast<t>(f)) == static_cast<t>(f);
+    }
+    static inline void AddFlag(NetPermissionFlags& flags, NetPermissionFlags f)
+    {
+        flags = flags | f;
+    }
+    //! ClearFlag is only called with `f` == NetPermissionFlags::Implicit.
+    //! If that should change in the future, be aware that ClearFlag should not
+    //! be called with a subflag of a multiflag, e.g. NetPermissionFlags::Relay
+    //! or NetPermissionFlags::Download, as that would leave `flags` in an
+    //! invalid state corresponding to none of the existing flags.
+    static inline void ClearFlag(NetPermissionFlags& flags, NetPermissionFlags f)
+    {
+        assert(f == NetPermissionFlags::Implicit);
+        using t = typename std::underlying_type<NetPermissionFlags>::type;
+        flags = static_cast<NetPermissionFlags>(static_cast<t>(flags) & ~static_cast<t>(f));
+    }
+};
+class NetWhitebindPermissions : public NetPermissions
+{
+public:
+    static bool TryParse(const std::string& str, NetWhitebindPermissions& output, bilingual_str& error);
+    CService m_service;
+};
+class NetWhitelistPermissions : public NetPermissions
+{
+public:
+    static bool TryParse(const std::string& str, NetWhitelistPermissions& output, bilingual_str& error);
+    CSubNet m_subnet;
+};
+#endif // BITCOIN_NET_PERMISSIONS_H
