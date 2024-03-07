@@ -206,6 +206,8 @@ static inline constexpr NetPermissionFlags operator|(NetPermissionFlags a, NetPe
     return static_cast<NetPermissionFlags>(static_cast<t>(a) | static_cast<t>(b));
 }
 
+//  slidechain configurable permissions customized for particular forked chain
+
 class NetPermissions
 {
 public:
