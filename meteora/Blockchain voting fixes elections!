@@ -6,6 +6,8 @@ AUTHOR: ERIC DIXON
 Blockchain voting as a solution: Why and how?
 The philosophy as the basis for the solution
 Everything else is only babble
+This is what the DOGE/Elon people do not understand
+They will never understand, without reading this
 
 There can be many iterations of a blockchain voting system
 as envisioned in the named patents above.
@@ -30,4 +32,15 @@ Because the biggest fraud event opportunity
 Is not in the election itself
 it is always in allowing people to circumvent the credential gate
 The gate determines whether you can vote or not
+
+A regular election (election event) is presumed valid
+Because its participants are assumed to have validity registered and met 
+all the legal requirements to vote (i.e., residence, age)
+
+Our chain segregates the requirements gate from the election
+So the election chain is never impeded by the credentials chain
+The requirements must be screened separately
+
+Accuracy and security are always more important than "convenience"
+Especially when it's for something really important
 
