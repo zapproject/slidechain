@@ -5,6 +5,8 @@ Each patent was granted in 2017.
 or any derivative, description, application or use thereof except pursuant to a validly executed license agreement
 for which appropriate, commercially reasonable consideration negotiated on an arm's length basis is tendered. This is for informational purposes only and not for any other purpose including any purported investment opportunity (no such opportunity is being offered)
 
+Copyright Eric Dixon 2025. All rights reserved.
+
 # Slidechain permits event management functions
 Accommodate multiple linked chains
 
