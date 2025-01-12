@@ -1,7 +1,7 @@
 # Slidechain applications were introduced in U.S. Pat. 9608829 and 9836908.
-# Blocktech LLC reserves all rights to said patents.
-Each patent was granted in 2017. 
-# No license granted to slidechain 
+# Blocktech LLC (a Colorado LLC) reserves all rights to said patents.
+Each patent was granted in 2017 and remains in full force and effect. 
+# No license granted by Blocktech LLC to slidechain 
 or any derivative, description, application or use thereof except pursuant to a validly executed license agreement
 for which appropriate, commercially reasonable consideration negotiated on an arm's length basis is tendered. This is for informational purposes only and not for any other purpose including any purported investment opportunity (no such opportunity is being offered)
 
@@ -39,7 +39,7 @@ Blockchain_seven:
 
 // just say neigh
 
-
+// All chains use or contemplate updatable blocks which have updatable hashes
 
 THE BELOW HAS SINCE BEEN SUPERSEDED
 
