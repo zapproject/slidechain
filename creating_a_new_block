@@ -1,6 +1,10 @@
 
 
 // Function to create a new block.
+// Copyright Eric Dixon 2025. All rights reserved.
+// No license granted hereby
+// All rights subject to Blocktech LLC's U.S. Patents 9608829 and 9836908.
+
 fn create_block(previous_block: &BlockHeader, transactions: &Vec<Transaction>, fork_data: Option<ForkData>) -> BlockHeader {
     // Initialize a new block with default values.
     let mut new_block = BlockHeader::new();
