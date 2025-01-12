@@ -1,3 +1,6 @@
+Copyright Eric Dixon 2025. All rights reserved.
+Subject further to U.S. Patents 9608829 and 9836908.
+
 // Define the structure of a block header in the blockchain.
 struct BlockHeader {
     // Hash of the previous block in the chain.
