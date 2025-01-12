@@ -1,3 +1,5 @@
+// Copyright Eric Dixon 2025. All rights reserved.
+
 // Function to validate a block.
 fn validate_block(block: &BlockHeader, root_chain: &RootChain) -> bool {
     if block.fork_flag {
