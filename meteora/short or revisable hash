@@ -1,6 +1,9 @@
-// Pursuant to U.S. Patents 9608829 and 9836908, no licenses are granted hereto, and this material is for developmental purposes only. 
+// Pursuant to U.S. Patents 9608829 and 9836908, no licenses are granted hereto. 
+// This material is for developmental purposes only. 
+// Copyright Eric Dixon 2025. All rights reserved.
 
-// Short hash also called a revisable hash
+// Revisable hash also called an updatable hash or short hash
+// Revisable hash means a revisable block (or updatable block)
 // Not incomplete but intended to be supplemented
 
 // short hash or revisable hash
